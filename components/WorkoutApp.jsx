@@ -18,13 +18,14 @@ const mkDays = () =>
     name: `Day ${i + 1}`,
     completed: false,
   }))
+const [settings, setSettings] = useState({ defaultWork: 60, defaultRest: 120 })
 const mkEx = () => ({
   id: uid(),
   name: 'New Exercise',
-  sets: [{ weight: '', reps: '', work: 30, rest: 60 }],
+  sets: [mkSet()],
   note: '',
 })
-const mkSet = () => ({ weight: '', reps: '', work: 30, rest: 60 })
+const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
 const isSS = (n) => n?.toLowerCase().includes('superset')
 const fmt = (s) =>
   `${Math.floor(Math.max(0, s) / 60)}:${Math.floor(Math.max(0, s) % 60)
@@ -94,6 +95,7 @@ export default function WorkoutApp({ session }) {
         if (data.days && data.days.length > 0) setDays(data.days)
         if (data.exercises) setExMap(data.exercises)
         if (typeof data.selected_day === 'number') setSel(data.selected_day)
+        if (data.settings) setSettings(data.settings)
       }
       loadedRef.current = true
       setIsLoading(false)
@@ -114,6 +116,7 @@ export default function WorkoutApp({ session }) {
           days,
           exercises: exMap,
           selected_day: sel,
+          settings,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }
@@ -128,7 +131,7 @@ export default function WorkoutApp({ session }) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
-  }, [days, exMap, sel, session.user.id])
+  }, [days, exMap, sel, settings, session.user.id])
 
   const logout = async () => {
     await supabase.auth.signOut()
@@ -613,6 +616,31 @@ export default function WorkoutApp({ session }) {
             </button>
           )}
         </div>
+
+        {/* Settings Panel */}
+        {sOpen && (
+          <div className="flex items-center gap-3 px-3 py-2 border-t border-gray-800/50">
+            <span className="text-xs text-gray-500 whitespace-nowrap">Defaults:</span>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-gray-400">Work(s)</label>
+              <input
+                type="number"
+                className="bg-gray-800 rounded px-2 py-1 w-16 text-white outline-none text-sm focus:ring-1 focus:ring-blue-500"
+                value={settings.defaultWork}
+                onChange={(e) => setSettings(s => ({ ...s, defaultWork: Number(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-gray-400">Rest(s)</label>
+              <input
+                type="number"
+                className="bg-gray-800 rounded px-2 py-1 w-16 text-white outline-none text-sm focus:ring-1 focus:ring-blue-500"
+                value={settings.defaultRest}
+                onChange={(e) => setSettings(s => ({ ...s, defaultRest: Number(e.target.value) || 0 }))}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Day Action Bar */}
         {sOpen && (
