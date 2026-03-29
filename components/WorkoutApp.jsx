@@ -24,6 +24,8 @@ const gridCols = '44px 1fr 1fr 1fr 1fr 32px'
 const WORK_BG = '#1a4d2e'
 const REST_BG = '#3d2066'
 
+const defaultSettings = { defaultWork: 60, defaultRest: 120, haUrl: '', haToken: '' }
+
 export default function WorkoutApp({ session }) {
   const [days, setDays] = useState(mkDays)
   const [sel, setSel] = useState(0)
@@ -37,14 +39,13 @@ export default function WorkoutApp({ session }) {
   const [isLoading, setIsLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [settings, setSettings] = useState({ defaultWork: 60, defaultRest: 120 })
-  const [syncUrl, setSyncUrl] = useState('')
-  const [syncToken, setSyncToken] = useState('')
+  const [settings, setSettings] = useState(defaultSettings)
   const [clipDay, setClipDay] = useState(null)
   const [clipEx, setClipEx] = useState(null)
   const [tmr, setTmr] = useState({ on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 })
   const [tmrDayId, setTmrDayId] = useState(null)
   const [confirmDlg, setConfirmDlg] = useState(null)
+  const [haStatus, setHaStatus] = useState('')
 
   const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
   const mkEx = () => ({ id: uid(), name: 'New Exercise', sets: [mkSet()], note: '' })
@@ -57,15 +58,95 @@ export default function WorkoutApp({ session }) {
   const fileRef = useRef(null)
   const dayScrollRef = useRef(null)
   const prevEiRef = useRef(-1)
+  const settingsRef = useRef(settings)
+  const dayNameRef = useRef('')
 
   const scrollDays = (dir) => {
     dayScrollRef.current?.scrollBy({ left: dir * 150, behavior: 'smooth' })
   }
 
   useEffect(() => { tR.current = tmr }, [tmr])
+  useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
 
-  /* Auto-scroll to current exercise card when exercise changes */
+  const safeIdx = Math.min(sel, days.length - 1)
+  const day = days[safeIdx]
+  const did = day?.id
+
+  useEffect(() => { dayNameRef.current = day?.name || '' }, [day?.name])
+
+  /* ── Home Assistant Push ── */
+  const pushHA = (phase, duration, qItem, extra = {}) => {
+    const s = settingsRef.current
+    if (!s.haUrl || !s.haToken) return
+
+    const entities = [
+      {
+        entity_id: 'sensor.workout_exercise',
+        state: qItem?.nm || 'idle',
+        attributes: {
+          friendly_name: 'Current Exercise',
+          set_number: qItem?.sn || 0,
+          total_sets: qItem?.ts || 0,
+          day: dayNameRef.current,
+          icon: 'mdi:dumbbell',
+        },
+      },
+      {
+        entity_id: 'sensor.workout_phase',
+        state: phase,
+        attributes: {
+          friendly_name: 'Workout Phase',
+          duration: Math.ceil(duration),
+          work_time: qItem?.w || 0,
+          rest_time: qItem?.r || 0,
+          started_at: new Date().toISOString(),
+          ...extra,
+          icon: phase === 'WORK' ? 'mdi:run' : phase === 'REST' ? 'mdi:seat' : phase === 'PAUSED' ? 'mdi:pause' : 'mdi:stop',
+        },
+      },
+    ]
+
+    fetch('/api/ha', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: s.haUrl, token: s.haToken, entities }),
+    }).catch(() => {})
+  }
+
+  const testHA = async () => {
+    if (!settings.haUrl || !settings.haToken) return
+    setHaStatus('testing')
+    try {
+      const res = await fetch('/api/ha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: settings.haUrl,
+          token: settings.haToken,
+          entities: [{
+            entity_id: 'sensor.workout_phase',
+            state: 'TEST',
+            attributes: {
+              friendly_name: 'Workout Phase',
+              duration: 0,
+              work_time: 0,
+              rest_time: 0,
+              started_at: new Date().toISOString(),
+              icon: 'mdi:check',
+            },
+          }],
+        }),
+      })
+      const data = await res.json()
+      setHaStatus(data.ok ? 'ok' : 'fail')
+    } catch {
+      setHaStatus('fail')
+    }
+    setTimeout(() => setHaStatus(''), 3000)
+  }
+
+  /* Auto-scroll to current exercise card */
   useEffect(() => {
     if (tmr.vis && tmr.q[tmr.qi]) {
       const newEi = tmr.q[tmr.qi].ei
@@ -88,7 +169,7 @@ export default function WorkoutApp({ session }) {
         if (data.days?.length > 0) setDays(data.days)
         if (data.exercises) setExMap(data.exercises)
         if (typeof data.selected_day === 'number') setSel(data.selected_day)
-        if (data.settings) setSettings(data.settings)
+        if (data.settings) setSettings((prev) => ({ ...prev, ...data.settings }))
       }
       loadedRef.current = true
       setIsLoading(false)
@@ -114,9 +195,6 @@ export default function WorkoutApp({ session }) {
   const ask = (msg, fn) => setConfirmDlg({ msg, fn })
   const doConfirm = () => { confirmDlg?.fn(); setConfirmDlg(null) }
 
-  const safeIdx = Math.min(sel, days.length - 1)
-  const day = days[safeIdx]
-  const did = day?.id
   const exs = exMap[did] || []
   const setExs = (fn) => setExMap((m) => ({ ...m, [did]: typeof fn === 'function' ? fn(m[did] || []) : fn }))
 
@@ -163,7 +241,7 @@ export default function WorkoutApp({ session }) {
   const importData = (e) => {
     const file = e.target.files?.[0]; if (!file) return
     const r = new FileReader()
-    r.onload = (ev) => { try { const d = JSON.parse(ev.target.result); if (d.days) setDays(d.days); if (d.exercises) setExMap(d.exercises); if (d.settings) setSettings(d.settings); setSel(0) } catch {} }
+    r.onload = (ev) => { try { const d = JSON.parse(ev.target.result); if (d.days) setDays(d.days); if (d.exercises) setExMap(d.exercises); if (d.settings) setSettings((p) => ({ ...p, ...d.settings })); setSel(0) } catch {} }
     r.readAsText(file); e.target.value = ''
   }
 
@@ -171,6 +249,7 @@ export default function WorkoutApp({ session }) {
     ? days.flatMap((d, di) => (exMap[d.id] || []).filter((e) => e.name.toLowerCase().includes(searchQ.toLowerCase())).map((e) => ({ exName: e.name, dayName: d.name, dayIdx: di })))
     : []
 
+  /* ── Timer ── */
   const buildQ = () => {
     const ex = exMap[did] || []; const q = []; let i = 0
     while (i < ex.length) {
@@ -186,21 +265,119 @@ export default function WorkoutApp({ session }) {
     }
     return q
   }
+
   const tick = () => {
     const t = tR.current; if (!t.on) return
     const el = (Date.now() - t.ps) / 1000, rem = t.dur - el, rs = Math.ceil(rem)
     if (rs <= 3 && rs > 0 && rs !== ltR.current) { ltR.current = rs; beep(800, 0.08) }
     if (rem <= 0) {
-      if (t.phase === 'WORK') { beep(1200, 0.3); const rd = t.q[t.qi].r; const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }; setTmr(n); tR.current = n; ltR.current = -1 }
-      else { beep(600, 0.5, 'square'); const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 } }
+      if (t.phase === 'WORK') {
+        beep(1200, 0.3)
+        const rd = t.q[t.qi].r
+        const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
+        setTmr(n); tR.current = n; ltR.current = -1
+        pushHA('REST', rd, t.q[t.qi])
+      } else {
+        beep(600, 0.5, 'square')
+        const ni = t.qi + 1
+        if (ni >= t.q.length) stopTInner()
+        else {
+          const wd = t.q[ni].w
+          const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
+          setTmr(n); tR.current = n; ltR.current = -1
+          pushHA('WORK', wd, t.q[ni])
+        }
+      }
     } else setTmr((p) => ({ ...p, rem: Math.max(0, rem) }))
   }
-  const startT = () => { const q = buildQ(); if (!q.length) return; if (iR.current) clearInterval(iR.current); const n = { on: true, vis: true, phase: 'WORK', q, qi: 0, ps: Date.now(), dur: q[0].w, rem: q[0].w }; setTmr(n); tR.current = n; ltR.current = -1; prevEiRef.current = -1; iR.current = setInterval(tick, 100); setTmrDayId(did) }
-  const pauseT = () => setTmr((p) => { let n; if (p.on) { n = { ...p, on: false, rem: Math.max(0, p.dur - (Date.now() - p.ps) / 1000) } } else { n = { ...p, on: true, ps: Date.now() - (p.dur - p.rem) * 1000 }; if (!iR.current) iR.current = setInterval(tick, 100) } tR.current = n; return n })
-  const skipT = () => { const t = tR.current; if (t.phase === 'WORK') { const rd = t.q[t.qi].r; const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }; setTmr(n); tR.current = n } else { const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } } ltR.current = -1 }
-  const prevT = () => { const t = tR.current; if (t.phase === 'REST') { const wd = t.q[t.qi].w; const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } else if (t.qi > 0) { const pi = t.qi - 1; const wd = t.q[pi].w; const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } else { const wd = t.q[0].w; const n = { ...t, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } ltR.current = -1 }
-  const nextT = () => { const t = tR.current; const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 } }
-  const stopTInner = () => { if (iR.current) { clearInterval(iR.current); iR.current = null } const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }; setTmr(n); tR.current = n; setTmrDayId(null); prevEiRef.current = -1 }
+
+  const startT = () => {
+    const q = buildQ(); if (!q.length) return
+    if (iR.current) clearInterval(iR.current)
+    const n = { on: true, vis: true, phase: 'WORK', q, qi: 0, ps: Date.now(), dur: q[0].w, rem: q[0].w }
+    setTmr(n); tR.current = n; ltR.current = -1; prevEiRef.current = -1
+    iR.current = setInterval(tick, 100)
+    setTmrDayId(did)
+    pushHA('WORK', q[0].w, q[0])
+  }
+
+  const pauseT = () => {
+    const p = tR.current
+    let n
+    if (p.on) {
+      const rem = Math.max(0, p.dur - (Date.now() - p.ps) / 1000)
+      n = { ...p, on: false, rem }
+      pushHA('PAUSED', 0, p.q[p.qi], { remaining: Math.ceil(rem) })
+    } else {
+      n = { ...p, on: true, ps: Date.now() - (p.dur - p.rem) * 1000 }
+      if (!iR.current) iR.current = setInterval(tick, 100)
+      pushHA(p.phase, p.rem, p.q[p.qi])
+    }
+    tR.current = n
+    setTmr(n)
+  }
+
+  const skipT = () => {
+    const t = tR.current
+    if (t.phase === 'WORK') {
+      const rd = t.q[t.qi].r
+      const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
+      setTmr(n); tR.current = n
+      pushHA('REST', rd, t.q[t.qi])
+    } else {
+      const ni = t.qi + 1
+      if (ni >= t.q.length) stopTInner()
+      else {
+        const wd = t.q[ni].w
+        const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
+        setTmr(n); tR.current = n
+        pushHA('WORK', wd, t.q[ni])
+      }
+    }
+    ltR.current = -1
+  }
+
+  const prevT = () => {
+    const t = tR.current
+    if (t.phase === 'REST') {
+      const wd = t.q[t.qi].w
+      const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }
+      setTmr(n); tR.current = n
+      pushHA('WORK', wd, t.q[t.qi])
+    } else if (t.qi > 0) {
+      const pi = t.qi - 1
+      const wd = t.q[pi].w
+      const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }
+      setTmr(n); tR.current = n
+      pushHA('WORK', wd, t.q[pi])
+    } else {
+      const wd = t.q[0].w
+      const n = { ...t, ps: Date.now(), dur: wd, rem: wd }
+      setTmr(n); tR.current = n
+      pushHA('WORK', wd, t.q[0])
+    }
+    ltR.current = -1
+  }
+
+  const nextT = () => {
+    const t = tR.current
+    const ni = t.qi + 1
+    if (ni >= t.q.length) stopTInner()
+    else {
+      const wd = t.q[ni].w
+      const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
+      setTmr(n); tR.current = n; ltR.current = -1
+      pushHA('WORK', wd, t.q[ni])
+    }
+  }
+
+  const stopTInner = () => {
+    if (iR.current) { clearInterval(iR.current); iR.current = null }
+    const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }
+    setTmr(n); tR.current = n; setTmrDayId(null); prevEiRef.current = -1
+    pushHA('OFF', 0, null)
+  }
+
   const stopTConfirm = () => ask('Stop the timer?', stopTInner)
 
   const curQ = tmr.q[tmr.qi]
@@ -210,13 +387,8 @@ export default function WorkoutApp({ session }) {
   const tmrDayName = days.find((d) => d.id === tmrDayId)?.name || ''
   const phaseBg = tmr.phase === 'WORK' ? WORK_BG : REST_BG
 
-  /* ── inline timer widget ── */
   const renderTimerWidget = () => (
-    <div style={{
-      background: phaseBg,
-      color: '#f5f5ee',
-      transition: 'background 0.4s ease',
-    }}>
+    <div style={{ background: phaseBg, color: '#f5f5ee', transition: 'background 0.4s ease' }}>
       <div className="px-5 py-5">
         <div className="flex items-center gap-5 flex-wrap">
           <span className="text-[52px] font-bold tabular-nums tracking-tight leading-none select-none"
@@ -272,7 +444,6 @@ export default function WorkoutApp({ session }) {
       `}</style>
       <input ref={fileRef} type="file" accept=".json" onChange={importData} className="hidden" />
 
-      {/* CONFIRM DIALOG */}
       {confirmDlg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="mx-4 max-w-sm w-full p-6 rounded-2xl" style={{ background: '#FAFAF5', fontFamily: mono }}>
@@ -288,7 +459,6 @@ export default function WorkoutApp({ session }) {
         </div>
       )}
 
-      {/* HEADER */}
       <header>
         <div className="max-w-2xl mx-auto px-4 py-5 flex items-end justify-between gap-4">
           <h1 className="text-[52px] font-bold tracking-tight uppercase leading-none">Workout Tracker</h1>
@@ -298,7 +468,6 @@ export default function WorkoutApp({ session }) {
         </div>
       </header>
 
-      {/* TOOLS TOGGLE */}
       <div>
         <div className="max-w-2xl mx-auto px-4">
           <button onClick={() => setShowTools(!showTools)}
@@ -346,24 +515,37 @@ export default function WorkoutApp({ session }) {
               <div>
                 <button onClick={() => setShowSync(!showSync)}
                   className={`${B} tracking-[0.12em] uppercase font-bold opacity-40 hover:opacity-100 transition-opacity`}>
-                  {showSync ? '− Home Automation Sync' : '+ Home Automation Sync'}
+                  {showSync ? '− Home Assistant' : '+ Home Assistant'}
                 </button>
                 {showSync && (
                   <div className="mt-3 space-y-3">
                     <div>
-                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>URL</label>
+                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>HA URL</label>
                       <input className={`w-full bg-transparent border border-[#ddd] focus:border-[#222] px-4 py-3 rounded-xl ${B} outline-none`}
-                        placeholder="https://..." value={syncUrl} onChange={(e) => setSyncUrl(e.target.value)} />
+                        placeholder="http://homeassistant.local:8123" value={settings.haUrl}
+                        onChange={(e) => setSettings((s) => ({ ...s, haUrl: e.target.value }))} />
                     </div>
                     <div>
-                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>Token</label>
+                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>Long-Lived Access Token</label>
                       <input className={`w-full bg-transparent border border-[#ddd] focus:border-[#222] px-4 py-3 rounded-xl ${B} outline-none`}
-                        placeholder="Bearer token..." type="password" value={syncToken} onChange={(e) => setSyncToken(e.target.value)} />
+                        placeholder="eyJ0..." type="password" value={settings.haToken}
+                        onChange={(e) => setSettings((s) => ({ ...s, haToken: e.target.value }))} />
                     </div>
-                    <div className="flex gap-2">
-                      <button className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border border-[#222]`}>Save</button>
-                      <button className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border border-[#bbb] hover:border-[#222]`}>Test</button>
+                    <div className="flex items-center gap-3">
+                      <button onClick={testHA} disabled={!settings.haUrl || !settings.haToken || haStatus === 'testing'}
+                        className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border transition-colors ${
+                          !settings.haUrl || !settings.haToken
+                            ? 'border-[#eee] opacity-20 cursor-default'
+                            : 'border-[#222] hover:bg-[#222] hover:text-[#f5f5ee]'
+                        }`}>
+                        {haStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                      </button>
+                      {haStatus === 'ok' && <span className={`${B} text-green-600 font-bold`}>✓ Connected</span>}
+                      {haStatus === 'fail' && <span className={`${B} text-red-600 font-bold`}>✗ Failed</span>}
                     </div>
+                    <p className={`${B} opacity-25 leading-relaxed`}>
+                      Sends sensor.workout_exercise and sensor.workout_phase on every phase change. Auto-saves.
+                    </p>
                   </div>
                 )}
               </div>
@@ -372,7 +554,6 @@ export default function WorkoutApp({ session }) {
         </div>
       </div>
 
-      {/* DAY PILLS */}
       <div>
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center gap-2 pb-3">
@@ -413,7 +594,6 @@ export default function WorkoutApp({ session }) {
               className={`${B} tracking-[0.1em] uppercase px-4 py-2.5 rounded-xl transition-colors ${
                 day?.completed ? 'bg-[#222] text-[#f5f5ee] font-bold' : 'bg-[#f0f0ea] hover:bg-[#e0e0d5]'
               }`}>{day?.completed ? '✓ Done' : 'Mark Done'}</button>
-
             {showTools && (
               <>
                 {[
@@ -433,7 +613,6 @@ export default function WorkoutApp({ session }) {
         </div>
       </div>
 
-      {/* TIMER START SECTION */}
       {!tmr.vis && (
         <div>
           <div className="max-w-2xl mx-auto px-4 py-5">
@@ -467,7 +646,6 @@ export default function WorkoutApp({ session }) {
         </div>
       )}
 
-      {/* TIMER BANNER — different day */}
       {tmr.vis && tmrDayId !== did && (
         <div style={{ background: phaseBg, color: '#f5f5ee', transition: 'background 0.4s ease' }}>
           <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
@@ -492,7 +670,6 @@ export default function WorkoutApp({ session }) {
         </div>
       )}
 
-      {/* EXERCISES */}
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {exs.length === 0 && (
           <div className="py-20 text-center">
@@ -511,7 +688,6 @@ export default function WorkoutApp({ session }) {
                 overflow: 'hidden',
               }}>
                 <div style={{ background: '#FFFFFF' }}>
-                  {/* Exercise header */}
                   <div className="px-5 py-4 flex items-center gap-3">
                     <span className={`${B} font-bold text-[#111] opacity-30 tabular-nums flex-shrink-0`}>{pad2(idx + 1)}</span>
                     <input
@@ -536,7 +712,6 @@ export default function WorkoutApp({ session }) {
                     )}
                   </div>
 
-                  {/* Sets */}
                   <div className="px-3">
                     <div className="py-2"
                       style={{ display: 'grid', gridTemplateColumns: gridCols, alignItems: 'center' }}>
@@ -552,9 +727,7 @@ export default function WorkoutApp({ session }) {
                           <div className="flex items-center justify-center">
                             <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${B} font-bold tabular-nums transition-all ${
                               isCurrentSet ? 'bg-[#1a1a1a] text-white' : 'text-[#111] opacity-25'
-                            }`}>
-                              {pad2(si + 1)}
-                            </span>
+                            }`}>{pad2(si + 1)}</span>
                           </div>
                           <div className="px-1">
                             <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] font-bold text-[#111] outline-none tabular-nums transition-all focus:bg-[#e8e8df]"
@@ -581,13 +754,11 @@ export default function WorkoutApp({ session }) {
                     })}
                   </div>
 
-                  {/* Add Set */}
                   <div className="px-5 py-3">
                     <button onClick={() => addSet(idx)}
                       className={`${B} tracking-[0.12em] uppercase text-[#111] opacity-30 hover:opacity-100 transition-opacity font-bold py-1`}>+ Add Set</button>
                   </div>
 
-                  {/* Notes */}
                   <div className="px-5 pb-4">
                     <textarea
                       className={`w-full bg-[#F0F0EA] rounded-xl outline-none ${B} text-[#111] opacity-35 focus:opacity-100 resize-none transition-all p-3 leading-relaxed focus:bg-[#e8e8df]`}
@@ -596,7 +767,6 @@ export default function WorkoutApp({ session }) {
                   </div>
                 </div>
 
-                {/* INLINE TIMER */}
                 {isTimerHere && renderTimerWidget()}
               </div>
             </div>
