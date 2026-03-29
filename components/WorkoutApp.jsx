@@ -86,7 +86,7 @@ export default function WorkoutApp({ session }) {
         .from('workout_data')
         .select('*')
         .eq('user_id', session.user.id)
-        .single()
+        .maybeSingle()
 
       if (data) {
         if (data.days && data.days.length > 0) setDays(data.days)
