@@ -18,14 +18,6 @@ const mkDays = () =>
     name: `Day ${i + 1}`,
     completed: false,
   }))
-const [settings, setSettings] = useState({ defaultWork: 60, defaultRest: 120 })
-const mkEx = () => ({
-  id: uid(),
-  name: 'New Exercise',
-  sets: [mkSet()],
-  note: '',
-})
-const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
 const isSS = (n) => n?.toLowerCase().includes('superset')
 const fmt = (s) =>
   `${Math.floor(Math.max(0, s) / 60)}:${Math.floor(Math.max(0, s) % 60)
@@ -70,6 +62,14 @@ export default function WorkoutApp({ session }) {
   const [tmr, setTmr] = useState({
     on: false, vis: false, phase: 'WORK', q: [], qi: 0,
     ps: 0, dur: 0, rem: 0, mini: false,
+  })
+  const [settings, setSettings] = useState({ defaultWork: 60, defaultRest: 120 })
+  const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
+  const mkEx = () => ({
+    id: uid(),
+    name: 'New Exercise',
+    sets: [mkSet()],
+    note: '',
   })
 
   const tR = useRef(tmr)
