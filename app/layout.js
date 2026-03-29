@@ -3,7 +3,11 @@ import './globals.css'
 export const metadata = {
   title: 'Workout Tracker',
   description: 'Track your workouts with timers and cloud sync',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({ children }) {

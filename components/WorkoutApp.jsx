@@ -18,10 +18,17 @@ const beep = (f, d, t = 'sine', v = 0.3) => {
   } catch {}
 }
 
+const mono = '"SF Mono","Fira Code","Cascadia Code","Consolas","Liberation Mono",monospace'
+const B = 'text-[14px]'
+const gridCols = '44px 1fr 1fr 1fr 1fr 32px'
+const WORK_BG = '#1a4d2e'
+const REST_BG = '#3d2066'
+
 export default function WorkoutApp({ session }) {
   const [days, setDays] = useState(mkDays)
   const [sel, setSel] = useState(0)
   const [exMap, setExMap] = useState({})
+  const [showTools, setShowTools] = useState(false)
   const [showSync, setShowSync] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQ, setSearchQ] = useState('')
@@ -33,10 +40,11 @@ export default function WorkoutApp({ session }) {
   const [settings, setSettings] = useState({ defaultWork: 60, defaultRest: 120 })
   const [syncUrl, setSyncUrl] = useState('')
   const [syncToken, setSyncToken] = useState('')
-  const [tmr, setTmr] = useState({
-    on: false, vis: false, phase: 'WORK', q: [], qi: 0,
-    ps: 0, dur: 0, rem: 0,
-  })
+  const [clipDay, setClipDay] = useState(null)
+  const [clipEx, setClipEx] = useState(null)
+  const [tmr, setTmr] = useState({ on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 })
+  const [tmrDayId, setTmrDayId] = useState(null)
+  const [confirmDlg, setConfirmDlg] = useState(null)
 
   const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
   const mkEx = () => ({ id: uid(), name: 'New Exercise', sets: [mkSet()], note: '' })
@@ -47,9 +55,31 @@ export default function WorkoutApp({ session }) {
   const loadedRef = useRef(false)
   const saveTimerRef = useRef(null)
   const fileRef = useRef(null)
+  const dayScrollRef = useRef(null)
+  const prevEiRef = useRef(-1)
+
+  const scrollDays = (dir) => {
+    dayScrollRef.current?.scrollBy({ left: dir * 150, behavior: 'smooth' })
+  }
 
   useEffect(() => { tR.current = tmr }, [tmr])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
+
+  /* Auto-scroll to current exercise card when exercise changes */
+  useEffect(() => {
+    if (tmr.vis && tmr.q[tmr.qi]) {
+      const newEi = tmr.q[tmr.qi].ei
+      if (newEi !== prevEiRef.current) {
+        prevEiRef.current = newEi
+        setTimeout(() => {
+          const el = document.getElementById(`ex-card-${newEi}`)
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }, 150)
+      }
+    } else {
+      prevEiRef.current = -1
+    }
+  }, [tmr.qi, tmr.vis])
 
   useEffect(() => {
     const load = async () => {
@@ -81,6 +111,9 @@ export default function WorkoutApp({ session }) {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
   }, [days, exMap, sel, settings, session.user.id])
 
+  const ask = (msg, fn) => setConfirmDlg({ msg, fn })
+  const doConfirm = () => { confirmDlg?.fn(); setConfirmDlg(null) }
+
   const safeIdx = Math.min(sel, days.length - 1)
   const day = days[safeIdx]
   const did = day?.id
@@ -95,458 +128,494 @@ export default function WorkoutApp({ session }) {
     setDays((d) => d.filter((_, i) => i !== safeIdx))
     setExMap((m) => { const n = { ...m }; delete n[id]; return n })
     if (sel >= safeIdx && sel > 0) setSel((s) => s - 1)
+    if (tmrDayId === id) stopTInner()
   }
-  const resetDay = () => { if (!did) return; setExMap(m => ({ ...m, [did]: [] })); setDays(d => d.map((x, i) => i === safeIdx ? { ...x, completed: false } : x)) }
+  const delDayConfirm = () => { if (days.length <= 1) return; ask('Delete this day and all its exercises?', delDay) }
+  const resetDay = () => { if (!did) return; setExMap((m) => ({ ...m, [did]: [] })); setDays((d) => d.map((x, i) => (i === safeIdx ? { ...x, completed: false } : x))) }
+  const resetDayConfirm = () => ask('Reset all exercises for this day?', resetDay)
+  const copyDay = () => setClipDay(JSON.parse(JSON.stringify(exs)))
+  const pasteDay = () => { if (!clipDay || !did) return; setExs((a) => [...a, ...clipDay.map((e) => ({ ...e, id: uid() }))]) }
   const saveRename = () => {
-    if (editDay && editName.trim()) setDays((d) => d.map((x) => (x.id === editDay ? { ...x, name: editName.trim() } : x)))
+    if (editDay !== null && editName.trim()) setDays((d) => d.map((x) => (x.id === editDay ? { ...x, name: editName.trim() } : x)))
     setEditDay(null)
   }
 
   const addEx = () => setExs((a) => [...a, mkEx()])
   const delEx = (idx) => setExs((a) => a.filter((_, i) => i !== idx))
+  const delExConfirm = (idx) => ask('Delete this exercise?', () => delEx(idx))
   const moveEx = (i, d) => setExs((a) => { const j = i + d; if (j < 0 || j >= a.length) return a; const b = [...a]; [b[i], b[j]] = [b[j], b[i]]; return b })
-  const updEx = (idx, field, value) => setExs((a) => a.map((e, i) => (i === idx ? { ...e, [field]: value } : e)))
+  const updEx = (idx, f, v) => setExs((a) => a.map((e, i) => (i === idx ? { ...e, [f]: v } : e)))
+  const copyEx = (idx) => setClipEx(JSON.parse(JSON.stringify(exs[idx])))
+  const pasteExAt = (idx) => { if (!clipEx) return; setExs((a) => { const b = [...a]; b.splice(idx, 0, { ...JSON.parse(JSON.stringify(clipEx)), id: uid() }); return b }) }
+  const pasteExEnd = () => { if (!clipEx) return; setExs((a) => [...a, { ...JSON.parse(JSON.stringify(clipEx)), id: uid() }]) }
+
   const addSet = (idx) => setExs((a) => a.map((e, i) => (i === idx ? { ...e, sets: [...e.sets, mkSet()] } : e)))
   const delSet = (idx, si) => setExs((a) => a.map((e, i) => (i === idx ? { ...e, sets: e.sets.filter((_, j) => j !== si) } : e)))
+  const delSetConfirm = (idx, si) => ask('Delete this set?', () => delSet(idx, si))
   const updSet = (idx, si, f, v) => setExs((a) => a.map((e, i) => (i === idx ? { ...e, sets: e.sets.map((s, j) => (j === si ? { ...s, [f]: v } : s)) } : e)))
 
   const exportData = () => {
-    const d = { days, exercises: exMap, settings }
-    const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })
+    const blob = new Blob([JSON.stringify({ days, exercises: exMap, settings }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `workout-export-${new Date().toISOString().slice(0, 10)}.json`; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = `workout-${new Date().toISOString().slice(0, 10)}.json`; a.click()
     URL.revokeObjectURL(url)
   }
   const importData = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const d = JSON.parse(ev.target.result)
-        if (d.days) setDays(d.days)
-        if (d.exercises) setExMap(d.exercises)
-        if (d.settings) setSettings(d.settings)
-        setSel(0)
-      } catch { alert('Invalid file') }
-    }
-    reader.readAsText(file); e.target.value = ''
+    const file = e.target.files?.[0]; if (!file) return
+    const r = new FileReader()
+    r.onload = (ev) => { try { const d = JSON.parse(ev.target.result); if (d.days) setDays(d.days); if (d.exercises) setExMap(d.exercises); if (d.settings) setSettings(d.settings); setSel(0) } catch {} }
+    r.readAsText(file); e.target.value = ''
   }
 
   const searchResults = searchQ.trim()
     ? days.flatMap((d, di) => (exMap[d.id] || []).filter((e) => e.name.toLowerCase().includes(searchQ.toLowerCase())).map((e) => ({ exName: e.name, dayName: d.name, dayIdx: di })))
     : []
 
-  // Timer
   const buildQ = () => {
     const ex = exMap[did] || []; const q = []; let i = 0
     while (i < ex.length) {
       if (isSS(ex[i].name)) {
-        const g = []; while (i < ex.length && isSS(ex[i].name)) { g.push(ex[i]); i++ }
+        const g = []; const gIdx = []
+        while (i < ex.length && isSS(ex[i].name)) { g.push(ex[i]); gIdx.push(i); i++ }
         const mx = Math.max(...g.map((e) => e.sets.length))
-        for (let s = 0; s < mx; s++) for (const e of g) if (s < e.sets.length)
-          q.push({ nm: e.name, sn: s + 1, ts: e.sets.length, w: Number(e.sets[s].work) || 30, r: Number(e.sets[s].rest) || 60 })
-      } else {
-        const e = ex[i]
-        e.sets.forEach((s, si) => q.push({ nm: e.name, sn: si + 1, ts: e.sets.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 }))
-        i++
-      }
+        for (let s = 0; s < mx; s++) for (let gi = 0; gi < g.length; gi++) {
+          const e = g[gi]
+          if (s < e.sets.length) q.push({ nm: e.name, ei: gIdx[gi], sn: s + 1, ts: e.sets.length, w: Number(e.sets[s].work) || 30, r: Number(e.sets[s].rest) || 60 })
+        }
+      } else { const e = ex[i]; e.sets.forEach((s, si) => q.push({ nm: e.name, ei: i, sn: si + 1, ts: e.sets.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 })); i++ }
     }
     return q
   }
-
   const tick = () => {
     const t = tR.current; if (!t.on) return
     const el = (Date.now() - t.ps) / 1000, rem = t.dur - el, rs = Math.ceil(rem)
     if (rs <= 3 && rs > 0 && rs !== ltR.current) { ltR.current = rs; beep(800, 0.08) }
     if (rem <= 0) {
-      if (t.phase === 'WORK') {
-        beep(1200, 0.3); const rd = t.q[t.qi].r
-        const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
-        setTmr(n); tR.current = n; ltR.current = -1
-      } else {
-        beep(600, 0.5, 'square'); const ni = t.qi + 1
-        if (ni >= t.q.length) stopT()
-        else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 }
-      }
+      if (t.phase === 'WORK') { beep(1200, 0.3); const rd = t.q[t.qi].r; const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }; setTmr(n); tR.current = n; ltR.current = -1 }
+      else { beep(600, 0.5, 'square'); const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 } }
     } else setTmr((p) => ({ ...p, rem: Math.max(0, rem) }))
   }
-
-  const startT = () => {
-    const q = buildQ(); if (!q.length) return
-    if (iR.current) clearInterval(iR.current)
-    const n = { on: true, vis: true, phase: 'WORK', q, qi: 0, ps: Date.now(), dur: q[0].w, rem: q[0].w }
-    setTmr(n); tR.current = n; ltR.current = -1; iR.current = setInterval(tick, 100)
-  }
-  const pauseT = () => setTmr((p) => {
-    let n; if (p.on) { const rem = p.dur - (Date.now() - p.ps) / 1000; n = { ...p, on: false, rem: Math.max(0, rem) } }
-    else { n = { ...p, on: true, ps: Date.now() - (p.dur - p.rem) * 1000 }; if (!iR.current) iR.current = setInterval(tick, 100) }
-    tR.current = n; return n
-  })
-  const skipT = () => {
-    const t = tR.current
-    if (t.phase === 'WORK') { const rd = t.q[t.qi].r; const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }; setTmr(n); tR.current = n }
-    else { const ni = t.qi + 1; if (ni >= t.q.length) stopT(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } }
-    ltR.current = -1
-  }
-  const prevT = () => {
-    const t = tR.current
-    if (t.phase === 'REST') { const wd = t.q[t.qi].w; const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n }
-    else if (t.qi > 0) { const pi = t.qi - 1; const wd = t.q[pi].w; const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n }
-    else { const wd = t.q[0].w; const n = { ...t, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n }
-    ltR.current = -1
-  }
-  const nextT = () => {
-    const t = tR.current; const ni = t.qi + 1
-    if (ni >= t.q.length) stopT()
-    else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 }
-  }
-  const stopT = () => {
-    if (iR.current) { clearInterval(iR.current); iR.current = null }
-    const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }
-    setTmr(n); tR.current = n
-  }
+  const startT = () => { const q = buildQ(); if (!q.length) return; if (iR.current) clearInterval(iR.current); const n = { on: true, vis: true, phase: 'WORK', q, qi: 0, ps: Date.now(), dur: q[0].w, rem: q[0].w }; setTmr(n); tR.current = n; ltR.current = -1; prevEiRef.current = -1; iR.current = setInterval(tick, 100); setTmrDayId(did) }
+  const pauseT = () => setTmr((p) => { let n; if (p.on) { n = { ...p, on: false, rem: Math.max(0, p.dur - (Date.now() - p.ps) / 1000) } } else { n = { ...p, on: true, ps: Date.now() - (p.dur - p.rem) * 1000 }; if (!iR.current) iR.current = setInterval(tick, 100) } tR.current = n; return n })
+  const skipT = () => { const t = tR.current; if (t.phase === 'WORK') { const rd = t.q[t.qi].r; const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }; setTmr(n); tR.current = n } else { const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } } ltR.current = -1 }
+  const prevT = () => { const t = tR.current; if (t.phase === 'REST') { const wd = t.q[t.qi].w; const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } else if (t.qi > 0) { const pi = t.qi - 1; const wd = t.q[pi].w; const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } else { const wd = t.q[0].w; const n = { ...t, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n } ltR.current = -1 }
+  const nextT = () => { const t = tR.current; const ni = t.qi + 1; if (ni >= t.q.length) stopTInner(); else { const wd = t.q[ni].w; const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }; setTmr(n); tR.current = n; ltR.current = -1 } }
+  const stopTInner = () => { if (iR.current) { clearInterval(iR.current); iR.current = null } const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }; setTmr(n); tR.current = n; setTmrDayId(null); prevEiRef.current = -1 }
+  const stopTConfirm = () => ask('Stop the timer?', stopTInner)
 
   const curQ = tmr.q[tmr.qi]
   const pct = tmr.dur > 0 ? ((tmr.dur - tmr.rem) / tmr.dur) * 100 : 0
+  const curExIdx = tmr.vis ? (curQ?.ei ?? -1) : -1
+  const timerOnThisDay = tmr.vis && tmrDayId === did
+  const tmrDayName = days.find((d) => d.id === tmrDayId)?.name || ''
+  const phaseBg = tmr.phase === 'WORK' ? WORK_BG : REST_BG
 
-  const mono = '"SF Mono", "Fira Code", "Cascadia Code", "Consolas", "Liberation Mono", monospace'
+  /* ── inline timer widget ── */
+  const renderTimerWidget = () => (
+    <div style={{
+      background: phaseBg,
+      color: '#f5f5ee',
+      transition: 'background 0.4s ease',
+    }}>
+      <div className="px-5 py-5">
+        <div className="flex items-center gap-5 flex-wrap">
+          <span className="text-[52px] font-bold tabular-nums tracking-tight leading-none select-none"
+            style={{ fontFamily: mono }}>
+            {fmt(tmr.rem)}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className={`${B} tracking-[0.12em] uppercase px-4 py-2.5 rounded-full transition-all ${
+              tmr.phase === 'WORK' ? 'bg-[#f5f5ee] text-[#222] font-bold' : 'border-2 border-[#f5f5ee]/20 opacity-30'
+            }`}>Work</span>
+            <span className={`${B} tracking-[0.12em] uppercase px-4 py-2.5 rounded-full transition-all ${
+              tmr.phase === 'REST' ? 'bg-[#f5f5ee] text-[#222] font-bold' : 'border-2 border-[#f5f5ee]/20 opacity-30'
+            }`}>Rest</span>
+          </div>
+        </div>
+        <div className="mt-3 h-1 w-full rounded-full" style={{ background: 'rgba(255,255,255,0.15)' }}>
+          <div className="h-full rounded-full transition-all duration-200" style={{ width: `${pct}%`, background: '#f5f5ee' }} />
+        </div>
+        <div className="flex items-center gap-2 mt-5 flex-wrap">
+          {[
+            { label: 'Prev', fn: prevT },
+            { label: tmr.on ? '❚❚ Pause' : '▶ Play', fn: pauseT, primary: true },
+            { label: 'Next', fn: nextT },
+            { label: 'Skip', fn: skipT },
+            { label: 'Stop', fn: stopTConfirm },
+          ].map((b) => (
+            <button key={b.label} onClick={b.fn}
+              className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl transition-all ${
+                b.primary
+                  ? 'border-2 border-[#f5f5ee] hover:bg-[#f5f5ee] hover:text-[#222] font-bold'
+                  : 'border-2 border-[#f5f5ee]/25 hover:border-[#f5f5ee]/60 active:bg-[#f5f5ee]/10'
+              }`}>{b.label}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#FAFAF5', fontFamily: mono }}>
-      <p className="text-[11px] tracking-[0.2em] uppercase opacity-40 animate-pulse">Loading Data...</p>
+      <p className={`${B} tracking-[0.15em] uppercase opacity-40 animate-pulse`}>Loading...</p>
     </div>
   )
 
   return (
-    <div className="min-h-screen" style={{ background: '#FAFAF5', fontFamily: mono, color: '#111' }}>
+    <div className="min-h-screen" style={{ background: '#FAFAF5', fontFamily: mono, color: '#1a1a1a' }}>
+      <style>{`
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
       <input ref={fileRef} type="file" accept=".json" onChange={importData} className="hidden" />
 
-      {/* ═══════ HEADER ═══════ */}
-      <header style={{ borderBottom: '2px solid #111' }}>
-        <div className="max-w-2xl mx-auto px-5 py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[15px] font-bold tracking-[0.2em] uppercase leading-tight">Workout Tracker</h1>
-              <p className="text-[11px] font-bold tracking-[0.15em] uppercase mt-0.5 opacity-40">Studio V.20</p>
+      {/* CONFIRM DIALOG */}
+      {confirmDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="mx-4 max-w-sm w-full p-6 rounded-2xl" style={{ background: '#FAFAF5', fontFamily: mono }}>
+            <p className={`${B} tracking-[0.08em] uppercase font-bold mb-2`}>Confirm</p>
+            <p className={`${B} tracking-[0.04em] mb-6 opacity-60 leading-relaxed`}>{confirmDlg.msg}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDlg(null)}
+                className={`flex-1 ${B} tracking-[0.1em] uppercase px-5 py-3 rounded-xl border-2 border-[#ccc] hover:border-[#222] transition-colors`}>Cancel</button>
+              <button onClick={doConfirm}
+                className={`flex-1 ${B} tracking-[0.1em] uppercase px-5 py-3 rounded-xl bg-[#222] text-[#f5f5ee] font-bold hover:bg-[#444] transition-colors`}>Confirm</button>
             </div>
-            <div className="flex items-center gap-2 pt-0.5">
-              {saving && <span className="text-[9px] tracking-[0.1em] uppercase opacity-30 animate-pulse">Saving...</span>}
-              {saved && !saving && <span className="text-[9px] tracking-[0.1em] uppercase opacity-40">✓ Saved</span>}
-            </div>
-          </div>
-          <p className="text-[9px] tracking-[0.12em] uppercase mt-2 opacity-30">
-            Editorial Training System / All Data Persists via Cloud
-          </p>
-          <div className="flex items-center gap-2 mt-4 flex-wrap">
-            <button onClick={exportData} className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 border border-[#bbb] hover:border-[#111] hover:bg-[#111] hover:text-white transition-all">Export Data</button>
-            <button onClick={() => fileRef.current?.click()} className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 border border-[#bbb] hover:border-[#111] hover:bg-[#111] hover:text-white transition-all">Import Data</button>
-            <button onClick={() => setShowSearch(!showSearch)} className={`text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 border transition-all ${showSearch ? 'border-[#111] bg-[#111] text-white' : 'border-[#bbb] hover:border-[#111]'}`}>Search</button>
-            <div className="flex-1" />
-            <button onClick={() => supabase.auth.signOut()} className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 border border-[#bbb] hover:border-[#111] hover:bg-[#111] hover:text-white transition-all">Sign Out</button>
-          </div>
-        </div>
-      </header>
-
-      {/* ═══════ SEARCH ═══════ */}
-      {showSearch && (
-        <div style={{ borderBottom: '1px solid #ddd' }}>
-          <div className="max-w-2xl mx-auto px-5 py-4">
-            <label className="text-[9px] tracking-[0.15em] uppercase opacity-40 block mb-2">Search Exercises</label>
-            <input autoFocus className="w-full bg-transparent text-[13px] outline-none border-b-2 border-[#111] pb-2 tracking-wide"
-              placeholder="Type to search..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
-            {searchQ && (
-              <div className="mt-2 max-h-48 overflow-y-auto">
-                {searchResults.length === 0 && <p className="text-[10px] tracking-[0.1em] uppercase opacity-30 py-3">No results found</p>}
-                {searchResults.map((r, i) => (
-                  <button key={i} onClick={() => { setSel(r.dayIdx); setShowSearch(false); setSearchQ('') }}
-                    className="block w-full text-left py-2.5 border-b border-[#eee] hover:bg-[#f0f0e8] px-2 transition-colors">
-                    <span className="text-[12px] font-bold tracking-[0.04em] uppercase">{r.exName}</span>
-                    <span className="text-[10px] opacity-30 ml-3">{r.dayName}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <button onClick={() => { setShowSearch(false); setSearchQ('') }} className="text-[9px] tracking-[0.15em] uppercase mt-3 opacity-40 hover:opacity-100 transition-opacity">Dismiss</button>
           </div>
         </div>
       )}
 
-      {/* ═══════ HOME AUTOMATION SYNC ═══════ */}
-      <div style={{ borderBottom: '1px solid #ddd' }}>
-        <div className="max-w-2xl mx-auto px-5">
-          <button onClick={() => setShowSync(!showSync)} className="w-full py-3 text-left text-[10px] tracking-[0.15em] uppercase font-bold opacity-40 hover:opacity-100 transition-opacity">
-            + Home Automation Sync
+      {/* HEADER */}
+      <header>
+        <div className="max-w-2xl mx-auto px-4 py-5 flex items-end justify-between gap-4">
+          <h1 className="text-[52px] font-bold tracking-tight uppercase leading-none">Workout Tracker</h1>
+          <span className={`${B} tracking-[0.1em] uppercase opacity-30 pb-1 flex-shrink-0`}>
+            {saving ? 'Saving...' : saved ? '✓ Saved' : ''}
+          </span>
+        </div>
+      </header>
+
+      {/* TOOLS TOGGLE */}
+      <div>
+        <div className="max-w-2xl mx-auto px-4">
+          <button onClick={() => setShowTools(!showTools)}
+            className={`w-full py-4 text-left ${B} tracking-[0.12em] uppercase font-bold opacity-40 hover:opacity-100 transition-opacity`}>
+            {showTools ? '− Hide Tools' : '+ Show Tools'}
           </button>
-          {showSync && (
-            <div className="pb-4 space-y-3">
-              <div>
-                <label className="text-[9px] tracking-[0.15em] uppercase opacity-40 block mb-1">URL</label>
-                <input className="w-full bg-transparent border border-[#ddd] focus:border-[#111] px-3 py-2 text-[12px] outline-none transition-colors"
-                  placeholder="https://your-webhook-url.com" value={syncUrl} onChange={(e) => setSyncUrl(e.target.value)} />
+
+          {showTools && (
+            <div className="pb-5 space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: 'Export', fn: exportData },
+                  { label: 'Import', fn: () => fileRef.current?.click() },
+                  { label: 'Search', fn: () => { setShowSearch(!showSearch); if (showSearch) setSearchQ('') } },
+                  { label: 'Copy Day', fn: copyDay },
+                  { label: clipDay ? 'Paste Day ✓' : 'Paste Day', fn: pasteDay, off: !clipDay },
+                  { label: 'Sign Out', fn: () => supabase.auth.signOut() },
+                ].map((b) => (
+                  <button key={b.label} onClick={b.fn} disabled={b.off}
+                    className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border transition-colors ${
+                      b.off ? 'border-[#eee] opacity-20 cursor-default' : 'border-[#bbb] hover:border-[#222] active:bg-[#222] active:text-white'
+                    }`}>{b.label}</button>
+                ))}
               </div>
-              <div>
-                <label className="text-[9px] tracking-[0.15em] uppercase opacity-40 block mb-1">Token</label>
-                <input className="w-full bg-transparent border border-[#ddd] focus:border-[#111] px-3 py-2 text-[12px] outline-none transition-colors"
-                  placeholder="Bearer token..." type="password" value={syncToken} onChange={(e) => setSyncToken(e.target.value)} />
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 bg-[#111] text-white border border-[#111]">Save Configuration</button>
-                <button className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 border border-[#bbb] hover:border-[#111] transition-colors">Test Connection</button>
-                <button onClick={() => setShowSync(false)} className="text-[9px] tracking-[0.15em] uppercase px-3 py-1.5 opacity-40 hover:opacity-100 transition-opacity">Dismiss</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* ═══════ DAY NAVIGATION ═══════ */}
-      <div style={{ borderBottom: '1px solid #ddd' }}>
-        <div className="max-w-2xl mx-auto px-5 py-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-3">
-              <button onClick={() => setSel(s => Math.max(0, s - 1))} disabled={safeIdx === 0}
-                className="text-[11px] tracking-[0.1em] uppercase opacity-40 hover:opacity-100 disabled:opacity-10 transition-opacity select-none">←</button>
-              {editDay === did ? (
-                <input autoFocus className="bg-transparent border-b-2 border-[#111] text-[13px] font-bold tracking-[0.05em] uppercase outline-none w-32"
-                  value={editName} onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && saveRename()} onBlur={saveRename} />
-              ) : (
-                <button onClick={() => { setEditDay(did); setEditName(day.name) }}
-                  className="text-[13px] font-bold tracking-[0.05em] uppercase hover:underline decoration-1 underline-offset-4">{day?.name}</button>
-              )}
-              <span className="text-[10px] opacity-25 tabular-nums">/ {days.length}</span>
-              <button onClick={() => setSel(s => Math.min(days.length - 1, s + 1))} disabled={safeIdx === days.length - 1}
-                className="text-[11px] tracking-[0.1em] uppercase opacity-40 hover:opacity-100 disabled:opacity-10 transition-opacity select-none">→</button>
-            </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button onClick={addDay} className="text-[9px] tracking-[0.12em] uppercase px-2.5 py-1.5 border border-[#bbb] hover:border-[#111] hover:bg-[#111] hover:text-white transition-all">+ Add</button>
-              <button onClick={toggleDone}
-                className={`text-[9px] tracking-[0.12em] uppercase px-2.5 py-1.5 border transition-all ${day?.completed ? 'bg-[#111] text-white border-[#111]' : 'border-[#bbb] hover:border-[#111]'}`}>
-                {day?.completed ? '✓ Done' : 'Mark Done'}
-              </button>
-              <button onClick={resetDay} className="text-[9px] tracking-[0.12em] uppercase px-2.5 py-1.5 border border-[#bbb] hover:border-[#111] transition-all">Reset Day</button>
-            </div>
-          </div>
-
-          {/* Day pills */}
-          <div className="flex items-center gap-1 mt-3 overflow-x-auto pb-1 scrollbar-hide">
-            {days.map((d, i) => (
-              <button key={d.id} onClick={() => setSel(i)}
-                className={`text-[8px] tracking-[0.1em] uppercase px-2 py-1 border flex-shrink-0 transition-all tabular-nums ${
-                  i === safeIdx ? 'bg-[#111] text-white border-[#111]'
-                  : d.completed ? 'border-[#111] opacity-50 hover:opacity-100'
-                  : 'border-[#ddd] opacity-30 hover:opacity-100 hover:border-[#999]'
-                }`}>
-                {d.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ═══════ TIMER ═══════ */}
-      <div style={{
-        borderBottom: tmr.vis ? '2px solid' : '1px solid #ddd',
-        borderColor: tmr.vis ? (tmr.phase === 'WORK' ? '#111' : '#4a7ab5') : undefined,
-        background: tmr.vis ? (tmr.phase === 'WORK' ? '#111' : '#1a3050') : 'transparent',
-        color: tmr.vis ? '#fff' : '#111',
-        transition: 'background 0.4s ease, color 0.4s ease',
-      }}>
-        <div className="max-w-2xl mx-auto px-5 py-4">
-          {/* Timer display row */}
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="text-[10px] tracking-[0.15em] uppercase opacity-50">⏱</span>
-            <span className="text-[40px] font-bold tabular-nums tracking-tight leading-none select-none">
-              {tmr.vis ? fmt(tmr.rem) : '00:00'}
-            </span>
-
-            <div className="h-8 w-[1px] mx-1" style={{ background: tmr.vis ? 'rgba(255,255,255,0.15)' : '#ddd' }} />
-
-            {/* Phase indicators */}
-            <div className="flex items-center gap-1.5">
-              <span className={`text-[9px] tracking-[0.15em] uppercase px-2.5 py-1 border transition-all ${
-                tmr.vis && tmr.phase === 'WORK' ? 'bg-white text-black border-white font-bold' : tmr.vis ? 'border-white/20 opacity-30' : 'border-[#ddd] opacity-30'
-              }`}>Work</span>
-              <span className={`text-[9px] tracking-[0.15em] uppercase px-2.5 py-1 border transition-all ${
-                tmr.vis && tmr.phase === 'REST' ? 'bg-white text-black border-white font-bold' : tmr.vis ? 'border-white/20 opacity-30' : 'border-[#ddd] opacity-30'
-              }`}>Rest</span>
-              <span className={`text-[9px] tracking-[0.15em] uppercase px-2.5 py-1 border transition-all ${
-                tmr.vis ? 'border-white/10 opacity-15' : 'border-[#ddd] opacity-15'
-              }`}>Trans</span>
-            </div>
-          </div>
-
-          {/* Current exercise info + progress */}
-          {tmr.vis && curQ && (
-            <div className="mt-3">
-              <p className="text-[11px] tracking-[0.1em] uppercase opacity-50">
-                {curQ.nm} — Set {curQ.sn}/{curQ.ts} — [{tmr.qi + 1}/{tmr.q.length} total]
-              </p>
-              <div className="mt-2 h-[2px] w-full" style={{ background: 'rgba(255,255,255,0.1)' }}>
-                <div className="h-full transition-all duration-200 ease-linear" style={{ width: `${pct}%`, background: tmr.phase === 'WORK' ? '#fff' : '#8ab4e8' }} />
-              </div>
-            </div>
-          )}
-
-          {/* Controls */}
-          <div className="flex items-center gap-1.5 mt-4 flex-wrap">
-            {!tmr.vis ? (
-              <>
-                <button onClick={startT}
-                  className="text-[10px] tracking-[0.15em] uppercase px-4 py-2 border border-[#111] hover:bg-[#111] hover:text-white transition-all font-bold">
-                  ▶ Play / Start
-                </button>
-                <div className="h-5 w-[1px] mx-1 bg-[#ddd]" />
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] tracking-[0.12em] uppercase opacity-40">Work:</span>
-                    <input type="number" className="w-12 bg-transparent border-b border-[#ccc] focus:border-[#111] text-[12px] text-center outline-none py-0.5 transition-colors tabular-nums"
-                      value={settings.defaultWork} onChange={(e) => setSettings(s => ({ ...s, defaultWork: +e.target.value || 0 }))} />
-                    <span className="text-[9px] opacity-25">s</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] tracking-[0.12em] uppercase opacity-40">Rest:</span>
-                    <input type="number" className="w-12 bg-transparent border-b border-[#ccc] focus:border-[#111] text-[12px] text-center outline-none py-0.5 transition-colors tabular-nums"
-                      value={settings.defaultRest} onChange={(e) => setSettings(s => ({ ...s, defaultRest: +e.target.value || 0 }))} />
-                    <span className="text-[9px] opacity-25">s</span>
-                  </div>
+              {showSearch && (
+                <div>
+                  <input autoFocus className={`w-full bg-transparent ${B} outline-none border-b-2 border-[#222] pb-2 tracking-wide uppercase`}
+                    placeholder="Search exercises..." value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
+                  {searchQ && (
+                    <div className="mt-2 max-h-52 overflow-y-auto">
+                      {searchResults.length === 0 && <p className={`${B} uppercase opacity-25 py-4`}>No results</p>}
+                      {searchResults.map((r, i) => (
+                        <button key={i} onClick={() => { setSel(r.dayIdx); setShowSearch(false); setSearchQ('') }}
+                          className={`block w-full text-left py-3 border-b border-[#eee] hover:bg-[#f0f0e8] px-2 rounded-lg`}>
+                          <span className={`${B} font-bold uppercase`}>{r.exName}</span>
+                          <span className={`${B} opacity-30 ml-3`}>{r.dayName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </>
-            ) : (
-              <>
-                <button onClick={prevT} className="text-[10px] tracking-[0.15em] uppercase px-3 py-2 border border-white/30 hover:bg-white/10 active:bg-white/20 transition-colors">Prev</button>
-                <button onClick={pauseT}
-                  className="text-[10px] tracking-[0.15em] uppercase px-4 py-2 border border-white hover:bg-white hover:text-black active:opacity-80 transition-all font-bold">
-                  {tmr.on ? '❚❚ Pause' : '▶ Play'}
+              )}
+
+              <div>
+                <button onClick={() => setShowSync(!showSync)}
+                  className={`${B} tracking-[0.12em] uppercase font-bold opacity-40 hover:opacity-100 transition-opacity`}>
+                  {showSync ? '− Home Automation Sync' : '+ Home Automation Sync'}
                 </button>
-                <button onClick={nextT} className="text-[10px] tracking-[0.15em] uppercase px-3 py-2 border border-white/30 hover:bg-white/10 active:bg-white/20 transition-colors">Next</button>
-                <div className="h-5 w-[1px] mx-0.5" style={{ background: 'rgba(255,255,255,0.15)' }} />
-                <button onClick={skipT} className="text-[10px] tracking-[0.15em] uppercase px-3 py-2 border border-white/30 hover:bg-white/10 active:bg-white/20 transition-colors">Skip Phase</button>
-                <button onClick={stopT} className="text-[10px] tracking-[0.15em] uppercase px-3 py-2 border border-white/30 hover:bg-white/10 active:bg-white/20 transition-colors">Stop</button>
+                {showSync && (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>URL</label>
+                      <input className={`w-full bg-transparent border border-[#ddd] focus:border-[#222] px-4 py-3 rounded-xl ${B} outline-none`}
+                        placeholder="https://..." value={syncUrl} onChange={(e) => setSyncUrl(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className={`${B} tracking-[0.12em] uppercase opacity-35 block mb-1`}>Token</label>
+                      <input className={`w-full bg-transparent border border-[#ddd] focus:border-[#222] px-4 py-3 rounded-xl ${B} outline-none`}
+                        placeholder="Bearer token..." type="password" value={syncToken} onChange={(e) => setSyncToken(e.target.value)} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border border-[#222]`}>Save</button>
+                      <button className={`${B} tracking-[0.1em] uppercase px-4 py-3 rounded-xl border border-[#bbb] hover:border-[#222]`}>Test</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* DAY PILLS */}
+      <div>
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-2 pb-3">
+            <button onClick={() => scrollDays(-1)}
+              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-[#f0f0ea] hover:bg-[#e0e0d5] transition-colors">
+              <span className="text-[16px] text-[#666] font-bold leading-none">‹</span>
+            </button>
+            <div ref={dayScrollRef} className="flex items-center gap-2 overflow-x-auto flex-1 no-scrollbar">
+              {days.map((d, i) => (
+                <button key={d.id} onClick={() => setSel(i)}
+                  className={`${B} tracking-[0.06em] uppercase px-4 py-2.5 rounded-full flex-shrink-0 transition-all whitespace-nowrap ${
+                    i === safeIdx
+                      ? 'bg-[#222] text-[#f5f5ee] font-bold'
+                      : d.completed
+                      ? 'bg-[#e8e8e0] opacity-50 hover:opacity-80'
+                      : 'bg-[#f0f0ea] opacity-60 hover:opacity-100'
+                  }`}>
+                  {d.completed ? '✓ ' : ''}{d.name}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => scrollDays(1)}
+              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-[#f0f0ea] hover:bg-[#e0e0d5] transition-colors">
+              <span className="text-[16px] text-[#666] font-bold leading-none">›</span>
+            </button>
+          </div>
+
+          {editDay !== null && (
+            <div className="pb-3">
+              <input autoFocus className={`w-full bg-transparent border-b-2 border-[#222] ${B} font-bold uppercase outline-none py-2`}
+                value={editName} onChange={(e) => setEditName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditDay(null) }} onBlur={saveRename} />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={toggleDone}
+              className={`${B} tracking-[0.1em] uppercase px-4 py-2.5 rounded-xl transition-colors ${
+                day?.completed ? 'bg-[#222] text-[#f5f5ee] font-bold' : 'bg-[#f0f0ea] hover:bg-[#e0e0d5]'
+              }`}>{day?.completed ? '✓ Done' : 'Mark Done'}</button>
+
+            {showTools && (
+              <>
+                {[
+                  { label: '+ Add', fn: addDay },
+                  { label: 'Rename', fn: () => { setEditDay(did); setEditName(day.name) } },
+                  { label: 'Reset', fn: resetDayConfirm },
+                  { label: 'Delete', fn: delDayConfirm, off: days.length <= 1 },
+                ].map((b) => (
+                  <button key={b.label} onClick={b.fn} disabled={b.off}
+                    className={`${B} tracking-[0.1em] uppercase px-4 py-2.5 rounded-xl transition-colors ${
+                      b.off ? 'bg-[#f5f5f0] opacity-15 cursor-default' : 'bg-[#f0f0ea] hover:bg-[#e0e0d5]'
+                    }`}>{b.label}</button>
+                ))}
               </>
             )}
           </div>
         </div>
       </div>
 
-      {/* ═══════ EXERCISES ═══════ */}
-      <div className="max-w-2xl mx-auto px-5 py-5 space-y-4">
+      {/* TIMER START SECTION */}
+      {!tmr.vis && (
+        <div>
+          <div className="max-w-2xl mx-auto px-4 py-5">
+            <div className="flex items-center gap-5 flex-wrap">
+              <span className="text-[52px] font-bold tabular-nums tracking-tight leading-none select-none opacity-20"
+                style={{ fontFamily: mono }}>00:00</span>
+              <div className="flex items-center gap-2">
+                <span className={`${B} tracking-[0.12em] uppercase px-4 py-2.5 rounded-full border-2 border-[#ddd] opacity-30`}>Work</span>
+                <span className={`${B} tracking-[0.12em] uppercase px-4 py-2.5 rounded-full border-2 border-[#ddd] opacity-30`}>Rest</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-5 flex-wrap">
+              <button onClick={startT}
+                className={`${B} tracking-[0.12em] uppercase px-5 py-3 rounded-xl border-2 border-[#222] hover:bg-[#222] hover:text-[#f5f5ee] transition-all font-bold`}>
+                ▶ Start
+              </button>
+              <div className="flex items-center gap-4 ml-2">
+                <label className="flex items-center gap-2">
+                  <span className={`${B} uppercase opacity-40`}>W</span>
+                  <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                    value={settings.defaultWork} onChange={(e) => setSettings((s) => ({ ...s, defaultWork: +e.target.value || 0 }))} />
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className={`${B} uppercase opacity-40`}>R</span>
+                  <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                    value={settings.defaultRest} onChange={(e) => setSettings((s) => ({ ...s, defaultRest: +e.target.value || 0 }))} />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TIMER BANNER — different day */}
+      {tmr.vis && tmrDayId !== did && (
+        <div style={{ background: phaseBg, color: '#f5f5ee', transition: 'background 0.4s ease' }}>
+          <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4">
+              <span className="text-[32px] font-bold tabular-nums tracking-tight" style={{ fontFamily: mono }}>{fmt(tmr.rem)}</span>
+              <div>
+                <span className={`${B} tracking-[0.08em] uppercase opacity-50`}>
+                  {curQ?.nm} — {tmr.phase} — Set {curQ?.sn}/{curQ?.ts}
+                </span>
+                <p className={`${B} tracking-[0.06em] uppercase opacity-30 mt-1`}>on {tmrDayName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={pauseT}
+                className={`${B} tracking-[0.1em] uppercase px-4 py-2.5 rounded-xl border-2 border-[#f5f5ee] hover:bg-[#f5f5ee] hover:text-[#222] font-bold transition-all`}>
+                {tmr.on ? '❚❚ Pause' : '▶ Play'}
+              </button>
+              <button onClick={stopTConfirm}
+                className={`${B} tracking-[0.1em] uppercase px-4 py-2.5 rounded-xl border-2 border-[#f5f5ee]/25 hover:border-[#f5f5ee]/60 transition-all`}>Stop</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXERCISES */}
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {exs.length === 0 && (
-          <div className="py-16 text-center">
-            <p className="text-[11px] tracking-[0.15em] uppercase opacity-25">No exercises in this collection</p>
-            <p className="text-[9px] tracking-[0.1em] uppercase opacity-15 mt-2">Click "+ Add to Collection" below to begin</p>
+          <div className="py-20 text-center">
+            <p className={`${B} tracking-[0.12em] uppercase opacity-20`}>No exercises yet</p>
+            <p className={`${B} tracking-[0.1em] uppercase opacity-15 mt-2`}>Tap + Add Exercise below</p>
           </div>
         )}
 
-        {exs.map((ex, idx) => (
-          <div key={ex.id} style={{ border: '1px solid #ddd' }}>
-            {/* Exercise header */}
-            <div className="px-4 py-3 flex items-center gap-3" style={{ borderBottom: '1px solid #eee' }}>
-              <span className="text-[10px] font-bold tracking-[0.1em] opacity-20 w-5 flex-shrink-0 tabular-nums">{pad2(idx + 1)}</span>
-              <span className="text-[10px] opacity-15 select-none">—</span>
-              <input
-                className="flex-1 text-[13px] font-bold tracking-[0.04em] uppercase bg-transparent outline-none border-b border-transparent focus:border-[#111] transition-colors"
-                style={{ fontFamily: mono }}
-                value={ex.name}
-                onChange={(e) => updEx(idx, 'name', e.target.value)}
-                placeholder="Exercise Name"
-              />
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <button onClick={() => moveEx(idx, -1)} disabled={idx === 0}
-                  className="text-[11px] px-1.5 py-1 opacity-20 hover:opacity-100 disabled:opacity-5 transition-opacity select-none">↑</button>
-                <button onClick={() => moveEx(idx, 1)} disabled={idx === exs.length - 1}
-                  className="text-[11px] px-1.5 py-1 opacity-20 hover:opacity-100 disabled:opacity-5 transition-opacity select-none">↓</button>
-                <button onClick={() => delEx(idx)}
-                  className="text-[12px] px-1.5 py-1 opacity-20 hover:opacity-100 hover:text-red-600 transition-all ml-1 select-none">×</button>
+        {exs.map((ex, idx) => {
+          const isTimerHere = timerOnThisDay && curExIdx === idx
+          return (
+            <div key={ex.id} id={`ex-card-${idx}`}>
+              <div style={{
+                borderRadius: '20px',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+                overflow: 'hidden',
+              }}>
+                <div style={{ background: '#FFFFFF' }}>
+                  {/* Exercise header */}
+                  <div className="px-5 py-4 flex items-center gap-3">
+                    <span className={`${B} font-bold text-[#111] opacity-30 tabular-nums flex-shrink-0`}>{pad2(idx + 1)}</span>
+                    <input
+                      className={`flex-1 ${B} font-bold tracking-[0.04em] uppercase bg-transparent outline-none text-[#111] border-b-2 border-transparent focus:border-[#222] transition-colors py-1`}
+                      value={ex.name} onChange={(e) => updEx(idx, 'name', e.target.value)} placeholder="Exercise Name"
+                    />
+                    {showTools && (
+                      <div className="flex items-center flex-shrink-0">
+                        <button onClick={() => copyEx(idx)} title="Copy"
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⧉</button>
+                        {clipEx && (
+                          <button onClick={() => pasteExAt(idx)} title="Paste here"
+                            className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⊞</button>
+                        )}
+                        <button onClick={() => moveEx(idx, -1)} disabled={idx === 0}
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === 0 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↑</button>
+                        <button onClick={() => moveEx(idx, 1)} disabled={idx === exs.length - 1}
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === exs.length - 1 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↓</button>
+                        <button onClick={() => delExConfirm(idx)} title="Delete"
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 hover:text-red-600 transition-all`}>×</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sets */}
+                  <div className="px-3">
+                    <div className="py-2"
+                      style={{ display: 'grid', gridTemplateColumns: gridCols, alignItems: 'center' }}>
+                      {['Set', 'Weight', 'Reps', 'Work', 'Rest', ''].map((h, i) => (
+                        <span key={i} className="text-center text-[10px] tracking-[0.12em] uppercase text-[#111] opacity-40 font-bold">{h}</span>
+                      ))}
+                    </div>
+                    {ex.sets.map((set, si) => {
+                      const isCurrentSet = isTimerHere && curQ && (si + 1) === curQ.sn
+                      return (
+                        <div key={si} className="py-1.5"
+                          style={{ display: 'grid', gridTemplateColumns: gridCols, alignItems: 'center' }}>
+                          <div className="flex items-center justify-center">
+                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${B} font-bold tabular-nums transition-all ${
+                              isCurrentSet ? 'bg-[#1a1a1a] text-white' : 'text-[#111] opacity-25'
+                            }`}>
+                              {pad2(si + 1)}
+                            </span>
+                          </div>
+                          <div className="px-1">
+                            <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] font-bold text-[#111] outline-none tabular-nums transition-all focus:bg-[#e8e8df]"
+                              value={set.weight} onChange={(e) => updSet(idx, si, 'weight', e.target.value)} placeholder="—" inputMode="decimal" />
+                          </div>
+                          <div className="px-1">
+                            <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] font-bold text-[#111] outline-none tabular-nums transition-all focus:bg-[#e8e8df]"
+                              value={set.reps} onChange={(e) => updSet(idx, si, 'reps', e.target.value)} placeholder="—" inputMode="numeric" />
+                          </div>
+                          <div className="px-1">
+                            <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] text-[#111] outline-none tabular-nums transition-all opacity-35 focus:opacity-100 focus:bg-[#e8e8df]"
+                              type="number" value={set.work} onChange={(e) => updSet(idx, si, 'work', +e.target.value)} />
+                          </div>
+                          <div className="px-1">
+                            <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] text-[#111] outline-none tabular-nums transition-all opacity-35 focus:opacity-100 focus:bg-[#e8e8df]"
+                              type="number" value={set.rest} onChange={(e) => updSet(idx, si, 'rest', +e.target.value)} />
+                          </div>
+                          <div className="flex items-center justify-center">
+                            <button onClick={() => delSetConfirm(idx, si)}
+                              className={`${B} text-[#111] opacity-25 hover:opacity-100 hover:text-red-600 transition-all w-8 h-8 inline-flex items-center justify-center`}>×</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Add Set */}
+                  <div className="px-5 py-3">
+                    <button onClick={() => addSet(idx)}
+                      className={`${B} tracking-[0.12em] uppercase text-[#111] opacity-30 hover:opacity-100 transition-opacity font-bold py-1`}>+ Add Set</button>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="px-5 pb-4">
+                    <textarea
+                      className={`w-full bg-[#F0F0EA] rounded-xl outline-none ${B} text-[#111] opacity-35 focus:opacity-100 resize-none transition-all p-3 leading-relaxed focus:bg-[#e8e8df]`}
+                      rows={1} placeholder="Notes..." value={ex.note} onChange={(e) => updEx(idx, 'note', e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* INLINE TIMER */}
+                {isTimerHere && renderTimerWidget()}
               </div>
             </div>
+          )
+        })}
 
-            {/* Set table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px]" style={{ fontFamily: mono }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #eee' }}>
-                    <th className="px-4 py-2.5 text-left tracking-[0.15em] uppercase opacity-25 font-bold w-12">Set</th>
-                    <th className="px-2 py-2.5 text-left tracking-[0.15em] uppercase opacity-25 font-bold">Weight</th>
-                    <th className="px-2 py-2.5 text-left tracking-[0.15em] uppercase opacity-25 font-bold">Reps</th>
-                    <th className="px-2 py-2.5 text-left tracking-[0.15em] uppercase opacity-25 font-bold w-16">Work</th>
-                    <th className="px-2 py-2.5 text-left tracking-[0.15em] uppercase opacity-25 font-bold w-16">Rest</th>
-                    <th className="w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ex.sets.map((set, si) => (
-                    <tr key={si} className="group" style={{ borderBottom: '1px solid #f5f5f0' }}>
-                      <td className="px-4 py-2 font-bold opacity-15 tabular-nums">{pad2(si + 1)}</td>
-                      <td className="px-2 py-1">
-                        <input className="w-full bg-transparent outline-none text-[13px] font-bold py-1 border-b border-transparent focus:border-[#111] transition-colors tabular-nums"
-                          style={{ fontFamily: mono }}
-                          value={set.weight} onChange={(e) => updSet(idx, si, 'weight', e.target.value)} placeholder="—" inputMode="decimal" />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input className="w-full bg-transparent outline-none text-[13px] font-bold py-1 border-b border-transparent focus:border-[#111] transition-colors tabular-nums"
-                          style={{ fontFamily: mono }}
-                          value={set.reps} onChange={(e) => updSet(idx, si, 'reps', e.target.value)} placeholder="—" inputMode="numeric" />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input className="w-full bg-transparent outline-none text-[12px] py-1 opacity-35 focus:opacity-100 border-b border-transparent focus:border-[#111] transition-all tabular-nums"
-                          style={{ fontFamily: mono }}
-                          type="number" value={set.work} onChange={(e) => updSet(idx, si, 'work', +e.target.value)} />
-                      </td>
-                      <td className="px-2 py-1">
-                        <input className="w-full bg-transparent outline-none text-[12px] py-1 opacity-35 focus:opacity-100 border-b border-transparent focus:border-[#111] transition-all tabular-nums"
-                          style={{ fontFamily: mono }}
-                          type="number" value={set.rest} onChange={(e) => updSet(idx, si, 'rest', +e.target.value)} />
-                      </td>
-                      <td className="px-2 py-1 text-center">
-                        <button onClick={() => delSet(idx, si)}
-                          className="opacity-0 group-hover:opacity-25 hover:!opacity-100 hover:text-red-600 transition-all text-[12px] select-none">×</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Add set */}
-            <div className="px-4 py-2.5" style={{ borderTop: '1px solid #eee' }}>
-              <button onClick={() => addSet(idx)}
-                className="text-[9px] tracking-[0.15em] uppercase opacity-25 hover:opacity-100 transition-opacity font-bold">
-                + Add Set
-              </button>
-            </div>
-
-            {/* Note */}
-            <div className="px-4 py-2.5" style={{ borderTop: '1px solid #f5f5f0' }}>
-              <textarea
-                className="w-full bg-transparent outline-none text-[11px] opacity-35 focus:opacity-100 resize-none transition-opacity leading-relaxed"
-                style={{ fontFamily: mono }}
-                rows={1}
-                placeholder="Notes..."
-                value={ex.note}
-                onChange={(e) => updEx(idx, 'note', e.target.value)}
-              />
-            </div>
-          </div>
-        ))}
-
-        {/* Add Exercise */}
-        <button onClick={addEx}
-          className="w-full py-4 text-[10px] tracking-[0.2em] uppercase font-bold border border-dashed border-[#bbb] hover:border-[#111] hover:bg-[#111] hover:text-white transition-all">
-          + Add to Collection
-        </button>
-      </div>
-
-      {/* ═══════ FOOTER ═══════ */}
-      <footer style={{ borderTop: '1px solid #eee' }}>
-        <div className="max-w-2xl mx-auto px-5 py-4">
-          <p className="text-[8px] tracking-[0.2em] uppercase opacity-20 text-center">
-            Workout Tracker Studio V.20 — {session.user.email}
-          </p>
+        <div className="space-y-3 pt-2">
+          <button onClick={addEx}
+            className={`w-full py-5 ${B} tracking-[0.15em] uppercase font-bold border-2 border-dashed rounded-2xl border-[#bbb] hover:border-[#222] active:bg-[#f0f0e5] transition-all`}>
+            + Add Exercise
+          </button>
+          {showTools && clipEx && (
+            <button onClick={pasteExEnd}
+              className={`w-full py-5 ${B} tracking-[0.15em] uppercase font-bold border-2 border-dashed rounded-2xl border-[#aaa] hover:border-[#222] active:bg-[#f0f0e5] transition-all opacity-50 hover:opacity-100`}>
+              ⧉ Paste: {clipEx.name}
+            </button>
+          )}
         </div>
-      </footer>
+      </div>
     </div>
   )
 }
