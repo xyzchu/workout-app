@@ -82,15 +82,17 @@ export default function WorkoutApp({ session }) {
 
     const entities = [
       {
-        entity_id: 'sensor.workout_exercise',
-        state: qItem?.nm || 'idle',
-        attributes: {
-          friendly_name: 'Current Exercise',
-          set_number: qItem?.sn || 0,
-          total_sets: qItem?.ts || 0,
-          day: dayNameRef.current,
-          icon: 'mdi:dumbbell',
-        },
+          entity_id: 'sensor.workout_exercise',
+          state: qItem?.nm || 'idle',
+          attributes: {
+            friendly_name: 'Current Exercise',
+            exercise_number: qItem?.ei != null ? qItem.ei + 1 : 0,
+            total_exercises: qItem?.te || 0,
+            set_number: qItem?.sn || 0,
+            total_sets: qItem?.ts || 0,
+            day: dayNameRef.current,
+            icon: 'mdi:dumbbell',
+          },
       },
       {
         entity_id: 'sensor.workout_phase',
@@ -259,9 +261,9 @@ export default function WorkoutApp({ session }) {
         const mx = Math.max(...g.map((e) => e.sets.length))
         for (let s = 0; s < mx; s++) for (let gi = 0; gi < g.length; gi++) {
           const e = g[gi]
-          if (s < e.sets.length) q.push({ nm: e.name, ei: gIdx[gi], sn: s + 1, ts: e.sets.length, w: Number(e.sets[s].work) || 30, r: Number(e.sets[s].rest) || 60 })
+          if (s < e.sets.length) q.push({ nm: e.name, ei: gIdx[gi], sn: s + 1, ts: e.sets.length, te: ex.length, w: Number(e.sets[s].work) || 30, r: Number(e.sets[s].rest) || 60 })
         }
-      } else { const e = ex[i]; e.sets.forEach((s, si) => q.push({ nm: e.name, ei: i, sn: si + 1, ts: e.sets.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 })); i++ }
+      } else { const e = ex[i]; e.sets.forEach((s, si) => q.push({ nm: e.name, ei: i, sn: si + 1, ts: e.sets.length, te: ex.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 })); i++ }
     }
     return q
   }
