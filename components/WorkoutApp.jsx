@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { motion, AnimatePresence } from 'framer-motion'
+// If above doesn't work, try:
+// import { m as motion, AnimatePresence } from 'framer-motion'
 import {
   Settings, Search, Plus, Trash2, ChevronUp, ChevronDown,
   Copy, Clipboard, Play, Pause, SkipBack, SkipForward,
