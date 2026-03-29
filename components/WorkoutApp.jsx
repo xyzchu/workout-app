@@ -860,13 +860,12 @@ export default function WorkoutApp({ session }) {
 
       {/* Timer FAB */}
       {!tmr.vis && (
-        <motion.button
-          whileTap={{ scale: 0.9 }}
+        <button
           onClick={startT}
           className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 z-20"
         >
           <Play size={22} className="ml-0.5" />
-        </motion.button>
+        </button>
       )}
 
       {/* Timer Panel */}
