@@ -46,6 +46,7 @@ export default function WorkoutApp({ session }) {
   const [tmrDayId, setTmrDayId] = useState(null)
   const [confirmDlg, setConfirmDlg] = useState(null)
   const [haStatus, setHaStatus] = useState('')
+  const [toast, setToast] = useState('')
 
   const mkSet = () => ({ weight: '', reps: '', work: settings.defaultWork, rest: settings.defaultRest })
   const mkEx = () => ({ id: uid(), name: 'New Exercise', sets: [mkSet()], note: '' })
@@ -202,10 +203,14 @@ export default function WorkoutApp({ session }) {
 
   const addDay = () => { setDays((d) => [...d, { id: uid(), name: `Day ${d.length + 1}`, completed: false }]); setSel(days.length) }
   const toggleDone = () => setDays((d) => {
-    const updated = d.map((x, i) => (i === safeIdx ? { ...x, completed: !x.completed } : x))
-    if (updated.every((x) => x.completed)) return updated.map((x) => ({ ...x, completed: false }))
+  const updated = d.map((x, i) => (i === safeIdx ? { ...x, completed: !x.completed } : x))
+    if (updated.every((x) => x.completed)) {
+      setToast('All Days Completed! Mark Done will be Reset')
+      setTimeout(() => setToast(''), 3000)
+      return updated.map((x) => ({ ...x, completed: false }))
+    }
     return updated
-  })  
+  })
   const delDay = () => {
     if (days.length <= 1) return
     const id = days[safeIdx].id
@@ -449,7 +454,11 @@ export default function WorkoutApp({ session }) {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
       <input ref={fileRef} type="file" accept=".json" onChange={importData} className="hidden" />
-
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-6 py-4 rounded-2xl bg-[#222] text-[#f5f5ee] shadow-lg animate-pulse">
+          <p className={`${B} tracking-[0.08em] uppercase font-bold text-center`}>{toast}</p>
+        </div>
+      )}
       {confirmDlg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="mx-4 max-w-sm w-full p-6 rounded-2xl" style={{ background: '#FAFAF5', fontFamily: mono }}>
