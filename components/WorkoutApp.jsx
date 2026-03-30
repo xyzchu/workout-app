@@ -3,7 +3,33 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
 const uid = () => Math.random().toString(36).slice(2, 11)
-const mkDays = () => Array.from({ length: 10 }, (_, i) => ({ id: uid(), name: `Day ${i + 1}`, completed: false }))
+const mkDays = () => {
+  const d1 = { id: uid(), name: 'Push Day', completed: false }
+  const d2 = { id: uid(), name: 'Pull Day', completed: false }
+  const d3 = { id: uid(), name: 'Leg Day', completed: false }
+  return [d1, d2, d3]
+}
+
+const sampleExercises = (days, defaultWork = 60, defaultRest = 120) => {
+  const s = (w, r, reps) => ({ weight: w, reps: reps || '', work: defaultWork, rest: defaultRest })
+  return {
+    [days[0].id]: [
+      { id: uid(), name: 'Bench Press', sets: [s('60', '10'), s('80', '8'), s('80', '8')], note: '' },
+      { id: uid(), name: 'Overhead Press', sets: [s('40', '10'), s('40', '10'), s('40', '10')], note: '' },
+      { id: uid(), name: 'Tricep Pushdown', sets: [s('20', '12'), s('20', '12'), s('20', '12')], note: '' },
+    ],
+    [days[1].id]: [
+      { id: uid(), name: 'Barbell Row', sets: [s('60', '10'), s('60', '10'), s('60', '10')], note: '' },
+      { id: uid(), name: 'Lat Pulldown', sets: [s('50', '10'), s('50', '10'), s('50', '10')], note: '' },
+      { id: uid(), name: 'Bicep Curl', sets: [s('12', '12'), s('12', '12'), s('12', '12')], note: '' },
+    ],
+    [days[2].id]: [
+      { id: uid(), name: 'Squat', sets: [s('80', '8'), s('100', '6'), s('100', '6')], note: '' },
+      { id: uid(), name: 'Romanian Deadlift', sets: [s('60', '10'), s('60', '10'), s('60', '10')], note: '' },
+      { id: uid(), name: 'Calf Raises', sets: [s('40', '15'), s('40', '15'), s('40', '15')], note: '' },
+    ],
+  }
+}
 const isSS = (n) => n?.toLowerCase().includes('superset')
 const pad2 = (n) => String(n).padStart(2, '0')
 const fmt = (s) => `${pad2(Math.floor(Math.max(0, s) / 60))}:${pad2(Math.floor(Math.max(0, s) % 60))}`
@@ -169,8 +195,15 @@ export default function WorkoutApp({ session }) {
     const load = async () => {
       const { data } = await supabase.from('workout_data').select('*').eq('user_id', session.user.id).maybeSingle()
       if (data) {
-        if (data.days?.length > 0) setDays(data.days)
-        if (data.exercises) setExMap(data.exercises)
+        if (data.days?.length > 0) {
+          setDays(data.days)
+          if (data.exercises) setExMap(data.exercises)
+        } else {
+          // New user — load sample data
+          const sampleDays = mkDays()
+          setDays(sampleDays)
+          setExMap(sampleExercises(sampleDays, settings.defaultWork, settings.defaultRest))
+        }
         if (typeof data.selected_day === 'number') setSel(data.selected_day)
         if (data.settings) setSettings((prev) => ({ ...prev, ...data.settings }))
       }
