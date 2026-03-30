@@ -838,6 +838,16 @@ export default function WorkoutApp({ session }) {
           )}
         </div>
       </div>
+      <footer className="max-w-2xl mx-auto px-4 py-8 text-center">
+        <p className="text-[11px] tracking-[0.15em] uppercase opacity-20"
+           style={{ fontFamily: mono }}>
+          © {new Date().getFullYear()} Your Name. All rights reserved.
+        </p>
+        <p className="text-[10px] tracking-[0.12em] uppercase opacity-15 mt-1"
+           style={{ fontFamily: mono }}>
+          Last updated {process.env.NEXT_PUBLIC_BUILD_DATE || 'unknown'}
+        </p>
+      </footer>
     </div>
   )
 }
