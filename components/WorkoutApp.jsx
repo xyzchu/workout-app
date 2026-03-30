@@ -631,18 +631,20 @@ export default function WorkoutApp({ session }) {
                 className={`${B} tracking-[0.12em] uppercase px-5 py-3 rounded-xl border-2 border-[#222] hover:bg-[#222] hover:text-[#f5f5ee] transition-all font-bold`}>
                 ▶ Start
               </button>
-              <div className="flex items-center gap-4 ml-2">
-                <label className="flex items-center gap-2">
-                  <span className={`${B} uppercase opacity-40`}>W</span>
-                  <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
-                    value={settings.defaultWork} onChange={(e) => setSettings((s) => ({ ...s, defaultWork: +e.target.value || 0 }))} />
-                </label>
-                <label className="flex items-center gap-2">
-                  <span className={`${B} uppercase opacity-40`}>R</span>
-                  <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
-                    value={settings.defaultRest} onChange={(e) => setSettings((s) => ({ ...s, defaultRest: +e.target.value || 0 }))} />
-                </label>
-              </div>
+              {showTools && (
+                <div className="flex items-center gap-4 ml-2">
+                  <label className="flex items-center gap-2">
+                    <span className={`${B} uppercase opacity-40`}>Default Work</span>
+                    <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                      value={settings.defaultWork} onChange={(e) => setSettings((s) => ({ ...s, defaultWork: +e.target.value || 0 }))} />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <span className={`${B} uppercase opacity-40`}>Default Rest</span>
+                    <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                      value={settings.defaultRest} onChange={(e) => setSettings((s) => ({ ...s, defaultRest: +e.target.value || 0 }))} />
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         </div>
