@@ -463,7 +463,7 @@ export default function WorkoutApp({ session }) {
 
       <header>
         <div className="max-w-2xl mx-auto px-4 py-5 flex items-end justify-between gap-4">
-          <h1 className="text-[52px] font-bold tracking-tight uppercase leading-none">Workout Tracker</h1>
+          <h1 className="text-[48px] font-bold tracking-tight uppercase leading-none">Workout Tracker</h1>
           <span className={`${B} tracking-[0.1em] uppercase opacity-30 pb-1 flex-shrink-0`}>
             {saving ? 'Saving...' : saved ? '✓ Saved' : ''}
           </span>
@@ -696,22 +696,6 @@ export default function WorkoutApp({ session }) {
                       className={`flex-1 ${B} font-bold tracking-[0.04em] uppercase bg-transparent outline-none text-[#111] border-b-2 border-transparent focus:border-[#222] transition-colors py-1`}
                       value={ex.name} onChange={(e) => updEx(idx, 'name', e.target.value)} placeholder="Exercise Name"
                     />
-                    {showTools && (
-                      <div className="flex items-center flex-shrink-0">
-                        <button onClick={() => copyEx(idx)} title="Copy"
-                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⧉</button>
-                        {clipEx && (
-                          <button onClick={() => pasteExAt(idx)} title="Paste here"
-                            className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⊞</button>
-                        )}
-                        <button onClick={() => moveEx(idx, -1)} disabled={idx === 0}
-                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === 0 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↑</button>
-                        <button onClick={() => moveEx(idx, 1)} disabled={idx === exs.length - 1}
-                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === exs.length - 1 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↓</button>
-                        <button onClick={() => delExConfirm(idx)} title="Delete"
-                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 hover:text-red-600 transition-all`}>×</button>
-                      </div>
-                    )}
                   </div>
 
                   <div className="px-3">
@@ -756,9 +740,25 @@ export default function WorkoutApp({ session }) {
                     })}
                   </div>
 
-                  <div className="px-5 py-3">
+                  <div className="px-5 py-3 flex items-center justify-between">
                     <button onClick={() => addSet(idx)}
                       className={`${B} tracking-[0.12em] uppercase text-[#111] opacity-30 hover:opacity-100 transition-opacity font-bold py-1`}>+ Add Set</button>
+                    {showTools && (
+                      <div className="flex items-center">
+                        <button onClick={() => copyEx(idx)} title="Copy"
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⧉</button>
+                        {clipEx && (
+                          <button onClick={() => pasteExAt(idx)} title="Paste here"
+                            className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 transition-opacity`}>⊞</button>
+                        )}
+                        <button onClick={() => moveEx(idx, -1)} disabled={idx === 0}
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === 0 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↑</button>
+                        <button onClick={() => moveEx(idx, 1)} disabled={idx === exs.length - 1}
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] transition-opacity ${idx === exs.length - 1 ? 'opacity-10' : 'opacity-35 hover:opacity-100'}`}>↓</button>
+                        <button onClick={() => delExConfirm(idx)} title="Delete"
+                          className={`${B} w-10 h-10 flex items-center justify-center text-[#111] opacity-35 hover:opacity-100 hover:text-red-600 transition-all`}>×</button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="px-5 pb-4">
