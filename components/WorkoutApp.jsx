@@ -201,7 +201,11 @@ export default function WorkoutApp({ session }) {
   const setExs = (fn) => setExMap((m) => ({ ...m, [did]: typeof fn === 'function' ? fn(m[did] || []) : fn }))
 
   const addDay = () => { setDays((d) => [...d, { id: uid(), name: `Day ${d.length + 1}`, completed: false }]); setSel(days.length) }
-  const toggleDone = () => setDays((d) => d.map((x, i) => (i === safeIdx ? { ...x, completed: !x.completed } : x)))
+  const toggleDone = () => setDays((d) => {
+    const updated = d.map((x, i) => (i === safeIdx ? { ...x, completed: !x.completed } : x))
+    if (updated.every((x) => x.completed)) return updated.map((x) => ({ ...x, completed: false }))
+    return updated
+  })  
   const delDay = () => {
     if (days.length <= 1) return
     const id = days[safeIdx].id
