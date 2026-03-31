@@ -474,11 +474,13 @@ export default function WorkoutApp({ session }) {
           if (tmr.phase !== 'REST' || !curQ || curQ.sn < curQ.ts) return null
           const nextExItem = tmr.qi + 1 < tmr.q.length ? tmr.q[tmr.qi + 1] : null
           if (!nextExItem || nextExItem.ei === curQ.ei) return null
+          const nextNote = exs[nextExItem.ei]?.note
           return (
             <div className="flex justify-end mt-4">
               <button onClick={nextT}
-                className={`${B} tracking-[0.08em] uppercase px-4 py-2.5 rounded-xl border-2 border-[#f5f5ee]/30 hover:border-[#f5f5ee]/70 text-[#f5f5ee] opacity-60 hover:opacity-100 transition-all flex items-center gap-2`}>
-                ↓ Next: {nextExItem.nm}
+                className={`${B} tracking-[0.08em] uppercase px-4 py-2.5 rounded-xl border-2 border-[#f5f5ee]/30 hover:border-[#f5f5ee]/70 text-[#f5f5ee] opacity-60 hover:opacity-100 transition-all text-right`}>
+                <div>↓ Next: {nextExItem.nm}</div>
+                {nextNote && <div className="mt-0.5 opacity-60 normal-case tracking-normal" style={{ fontSize: '11px' }}>{nextNote}</div>}
               </button>
             </div>
           )
