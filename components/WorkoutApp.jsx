@@ -96,6 +96,15 @@ export default function WorkoutApp({ session }) {
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!tR.current.vis) return
+      if (e.key === 'ArrowDown') { e.preventDefault(); nextT() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, []) // eslint-disable-line
+
   const safeIdx = Math.min(sel, days.length - 1)
   const day = days[safeIdx]
   const did = day?.id
@@ -295,17 +304,11 @@ export default function WorkoutApp({ session }) {
 
   /* ── Timer ── */
   const buildQ = () => {
-    const ex = exMap[did] || []; const q = []; let i = 0
-    while (i < ex.length) {
-      if (isSS(ex[i].name)) {
-        const g = []; const gIdx = []
-        while (i < ex.length && isSS(ex[i].name)) { g.push(ex[i]); gIdx.push(i); i++ }
-        const mx = Math.max(...g.map((e) => e.sets.length))
-        for (let s = 0; s < mx; s++) for (let gi = 0; gi < g.length; gi++) {
-          const e = g[gi]
-          if (s < e.sets.length) q.push({ nm: e.name, ei: gIdx[gi], sn: s + 1, ts: e.sets.length, te: ex.length, w: Number(e.sets[s].work) || 30, r: Number(e.sets[s].rest) || 60 })
-        }
-      } else { const e = ex[i]; e.sets.forEach((s, si) => q.push({ nm: e.name, ei: i, sn: si + 1, ts: e.sets.length, te: ex.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 })); i++ }
+    const ex = exMap[did] || []; const q = []
+    for (let i = 0; i < ex.length; i++) {
+      if (isSS(ex[i].name)) continue
+      const e = ex[i]
+      e.sets.forEach((s, si) => q.push({ nm: e.name, ei: i, sn: si + 1, ts: e.sets.length, te: ex.length, w: Number(s.work) || 30, r: Number(s.rest) || 60 }))
     }
     return q
   }
@@ -467,6 +470,19 @@ export default function WorkoutApp({ session }) {
               }`}>{b.label}</button>
           ))}
         </div>
+        {(() => {
+          if (tmr.phase !== 'REST' || !curQ || curQ.sn < curQ.ts) return null
+          const nextExItem = tmr.qi + 1 < tmr.q.length ? tmr.q[tmr.qi + 1] : null
+          if (!nextExItem || nextExItem.ei === curQ.ei) return null
+          return (
+            <div className="flex justify-end mt-4">
+              <button onClick={nextT}
+                className={`${B} tracking-[0.08em] uppercase px-4 py-2.5 rounded-xl border-2 border-[#f5f5ee]/30 hover:border-[#f5f5ee]/70 text-[#f5f5ee] opacity-60 hover:opacity-100 transition-all flex items-center gap-2`}>
+                ↓ Next: {nextExItem.nm}
+              </button>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
@@ -681,13 +697,13 @@ export default function WorkoutApp({ session }) {
                 <div className="flex items-center gap-4 ml-2">
                   <label className="flex items-center gap-2">
                     <span className={`${B} uppercase opacity-40`}>Default Work</span>
-                    <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
-                      value={settings.defaultWork} onChange={(e) => setSettings((s) => ({ ...s, defaultWork: +e.target.value || 0 }))} />
+                    <input inputMode="numeric" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                      value={settings.defaultWork} onChange={(e) => setSettings((s) => ({ ...s, defaultWork: e.target.value }))} />
                   </label>
                   <label className="flex items-center gap-2">
                     <span className={`${B} uppercase opacity-40`}>Default Rest</span>
-                    <input type="number" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
-                      value={settings.defaultRest} onChange={(e) => setSettings((s) => ({ ...s, defaultRest: +e.target.value || 0 }))} />
+                    <input inputMode="numeric" className={`w-16 bg-[#f0f0ea] rounded-xl ${B} text-center outline-none py-2.5 tabular-nums`}
+                      value={settings.defaultRest} onChange={(e) => setSettings((s) => ({ ...s, defaultRest: e.target.value }))} />
                   </label>
                 </div>
               )}
@@ -730,12 +746,21 @@ export default function WorkoutApp({ session }) {
 
         {exs.map((ex, idx) => {
           const isTimerHere = timerOnThisDay && curExIdx === idx
+          const isSuperset = isSS(ex.name)
           return (
-            <div key={ex.id} id={`ex-card-${idx}`}>
+            <div key={ex.id}>
+              {isSuperset && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '22px', marginTop: '-12px', marginBottom: '-8px', position: 'relative', zIndex: 2 }}>
+                  <div style={{ width: 2, height: 20, background: '#c8c8c0', borderRadius: 1 }} />
+                  <span style={{ fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#aaa', fontFamily: mono }}>superset</span>
+                </div>
+              )}
+              <div id={`ex-card-${idx}`}>
               <div style={{
                 borderRadius: '20px',
                 boxShadow: '0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
                 overflow: 'hidden',
+                borderLeft: isSuperset ? '3px solid #d0d0c8' : undefined,
               }}>
                 <div style={{ background: '#FFFFFF' }}>
                   <div className="px-5 py-4 flex items-center gap-3">
@@ -773,11 +798,11 @@ export default function WorkoutApp({ session }) {
                           </div>
                           <div className="px-1">
                             <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] text-[#111] outline-none tabular-nums transition-all opacity-35 focus:opacity-100 focus:bg-[#e8e8df]"
-                              type="number" value={set.work} onChange={(e) => updSet(idx, si, 'work', +e.target.value)} />
+                              inputMode="numeric" value={set.work} onChange={(e) => updSet(idx, si, 'work', e.target.value)} />
                           </div>
                           <div className="px-1">
                             <input className="w-full bg-[#F0F0EA] border-0 rounded-xl py-2.5 text-center text-[14px] text-[#111] outline-none tabular-nums transition-all opacity-35 focus:opacity-100 focus:bg-[#e8e8df]"
-                              type="number" value={set.rest} onChange={(e) => updSet(idx, si, 'rest', +e.target.value)} />
+                              inputMode="numeric" value={set.rest} onChange={(e) => updSet(idx, si, 'rest', e.target.value)} />
                           </div>
                           <div className="flex items-center justify-center">
                             {showTools && (
@@ -820,6 +845,7 @@ export default function WorkoutApp({ session }) {
                 </div>
 
                 {isTimerHere && renderTimerWidget()}
+              </div>
               </div>
             </div>
           )
