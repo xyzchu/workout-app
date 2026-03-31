@@ -119,6 +119,7 @@ export default function WorkoutApp({ session }) {
 
   // Persist timer state across reloads
   useEffect(() => {
+    if (!loadedRef.current) return // don't touch localStorage before data is loaded
     if (!tmr.vis) { localStorage.removeItem('workout_timer'); return }
     localStorage.setItem('workout_timer', JSON.stringify({ tmr, tmrDayId }))
   }, [tmr, tmrDayId])
