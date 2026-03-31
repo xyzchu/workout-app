@@ -34,6 +34,27 @@ const isSS = (n) => n?.toLowerCase().includes('superset')
 const pad2 = (n) => String(n).padStart(2, '0')
 const fmt = (s) => `${pad2(Math.floor(Math.max(0, s) / 60))}:${pad2(Math.floor(Math.max(0, s) % 60))}`
 
+// Fast-forwards timer state through any phases that elapsed while app was
+// backgrounded or the page was reloaded. Returns null if the queue is finished.
+const advanceTimerState = (t) => {
+  let { phase, qi, ps, dur, q } = t
+  const now = Date.now()
+  while (true) {
+    const rem = dur - (now - ps) / 1000
+    if (rem > 0) return { ...t, phase, qi, ps, dur, rem }
+    if (phase === 'WORK') {
+      ps = ps + Math.round(dur * 1000)
+      dur = q[qi].r
+      phase = 'REST'
+    } else {
+      const ni = qi + 1
+      if (ni >= q.length) return null
+      ps = ps + Math.round(dur * 1000)
+      qi = ni; dur = q[qi].w; phase = 'WORK'
+    }
+  }
+}
+
 let _ac
 const ac = () => { if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)(); return _ac }
 const beep = (f, d, t = 'sine', v = 0.3) => {
@@ -96,6 +117,31 @@ export default function WorkoutApp({ session }) {
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
 
+  // Persist timer state across reloads
+  useEffect(() => {
+    if (!tmr.vis) { localStorage.removeItem('workout_timer'); return }
+    localStorage.setItem('workout_timer', JSON.stringify({ tmr, tmrDayId }))
+  }, [tmr, tmrDayId])
+
+  // Restore timer after user data has loaded
+  useEffect(() => {
+    if (isLoading) return
+    try {
+      const saved = localStorage.getItem('workout_timer')
+      if (!saved) return
+      const { tmr: st, tmrDayId: sdid } = JSON.parse(saved)
+      if (!st?.vis || !st?.q?.length) return
+      const restored = st.on ? advanceTimerState(st) : st
+      if (!restored) { localStorage.removeItem('workout_timer'); return }
+      setTmr(restored); tR.current = restored
+      setTmrDayId(sdid)
+      if (restored.on) {
+        if (iR.current) clearInterval(iR.current)
+        iR.current = setInterval(tick, 100)
+      }
+    } catch { localStorage.removeItem('workout_timer') }
+  }, [isLoading]) // eslint-disable-line
+
   useEffect(() => {
     const handler = (e) => {
       if (!tR.current.vis) return
@@ -103,6 +149,19 @@ export default function WorkoutApp({ session }) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
+  }, []) // eslint-disable-line
+
+  // When returning from background: fast-forward timer and re-sync HA
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState !== 'visible' || !tR.current.on) return
+      const advanced = advanceTimerState(tR.current)
+      if (!advanced) { stopTInner(); return }
+      setTmr(advanced); tR.current = advanced
+      pushHA(advanced.phase, advanced.rem, advanced.q[advanced.qi])
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, []) // eslint-disable-line
 
   const safeIdx = Math.min(sel, days.length - 1)
@@ -422,6 +481,7 @@ export default function WorkoutApp({ session }) {
     if (iR.current) { clearInterval(iR.current); iR.current = null }
     const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }
     setTmr(n); tR.current = n; setTmrDayId(null); prevEiRef.current = -1
+    localStorage.removeItem('workout_timer')
     pushHA('OFF', 0, null)
   }
 
