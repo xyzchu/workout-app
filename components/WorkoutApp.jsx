@@ -104,14 +104,9 @@ export default function WorkoutApp({ session }) {
   const loadedRef = useRef(false)
   const saveTimerRef = useRef(null)
   const fileRef = useRef(null)
-  const dayScrollRef = useRef(null)
   const prevEiRef = useRef(-1)
   const settingsRef = useRef(settings)
   const dayNameRef = useRef('')
-
-  const scrollDays = (dir) => {
-    dayScrollRef.current?.scrollBy({ left: dir * 150, behavior: 'smooth' })
-  }
 
   useEffect(() => { tR.current = tmr }, [tmr])
   useEffect(() => { settingsRef.current = settings }, [settings])
@@ -683,29 +678,19 @@ export default function WorkoutApp({ session }) {
 
       <div>
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-2 pb-3">
-            <button onClick={() => scrollDays(-1)}
-              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-[#f0f0ea] hover:bg-[#e0e0d5] transition-colors">
-              <span className="text-[16px] text-[#666] font-bold leading-none">‹</span>
-            </button>
-            <div ref={dayScrollRef} className="flex items-center gap-2 overflow-x-auto flex-1 no-scrollbar">
-              {days.map((d, i) => (
-                <button key={d.id} onClick={() => setSel(i)}
-                  className={`${B} tracking-[0.06em] uppercase px-4 py-2.5 rounded-full flex-shrink-0 transition-all whitespace-nowrap ${
-                    i === safeIdx
-                      ? 'bg-[#222] text-[#f5f5ee] font-bold'
-                      : d.completed
-                      ? 'bg-[#e8e8e0] opacity-50 hover:opacity-80'
-                      : 'bg-[#f0f0ea] opacity-60 hover:opacity-100'
-                  }`}>
-                  {d.completed ? '✓ ' : ''}{d.name}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => scrollDays(1)}
-              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full bg-[#f0f0ea] hover:bg-[#e0e0d5] transition-colors">
-              <span className="text-[16px] text-[#666] font-bold leading-none">›</span>
-            </button>
+          <div className="flex flex-wrap gap-2 pb-3">
+            {days.map((d, i) => (
+              <button key={d.id} onClick={() => setSel(i)}
+                className={`${B} tracking-[0.06em] uppercase px-4 py-2.5 rounded-full transition-all whitespace-nowrap ${
+                  i === safeIdx
+                    ? 'bg-[#222] text-[#f5f5ee] font-bold'
+                    : d.completed
+                    ? 'bg-[#e8e8e0] opacity-50 hover:opacity-80'
+                    : 'bg-[#f0f0ea] opacity-60 hover:opacity-100'
+                }`}>
+                {d.completed ? '✓ ' : ''}{d.name}
+              </button>
+            ))}
           </div>
 
           {editDay !== null && (
