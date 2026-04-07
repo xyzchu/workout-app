@@ -588,7 +588,7 @@ export default function WorkoutApp({ session }) {
 
       <header>
         <div className="max-w-2xl mx-auto px-4 py-5 flex items-end justify-between gap-4">
-          <h1 className="text-[48px] font-bold tracking-tight uppercase leading-none">Workout Tracker</h1>
+          <h1 className="text-[48px] font-bold tracking-tight uppercase leading-none">Workout Tracker X</h1>
           <span className={`${B} tracking-[0.1em] uppercase opacity-30 pb-1 flex-shrink-0`}>
             {saving ? 'Saving...' : saved ? '✓ Saved' : ''}
           </span>
