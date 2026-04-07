@@ -105,6 +105,8 @@ export default function WorkoutApp({ session }) {
   const saveTimerRef = useRef(null)
   const fileRef = useRef(null)
   const dayScrollRef = useRef(null)
+  const dayBtnRefs = useRef([])
+  const scrolledOnLoadRef = useRef(false)
   const prevEiRef = useRef(-1)
   const settingsRef = useRef(settings)
   const dayNameRef = useRef('')
@@ -116,6 +118,17 @@ export default function WorkoutApp({ session }) {
   useEffect(() => { tR.current = tmr }, [tmr])
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
+
+  // Scroll selected day tab into view
+  useEffect(() => {
+    if (isLoading) return
+    const container = dayScrollRef.current
+    const btn = dayBtnRefs.current[safeIdx]
+    if (!container || !btn) return
+    const behavior = scrolledOnLoadRef.current ? 'smooth' : 'instant'
+    scrolledOnLoadRef.current = true
+    container.scrollTo({ left: btn.offsetLeft - container.offsetWidth / 2 + btn.offsetWidth / 2, behavior })
+  }, [safeIdx, isLoading])
 
   // Persist timer state across reloads
   useEffect(() => {
@@ -690,7 +703,7 @@ export default function WorkoutApp({ session }) {
             </button>
             <div ref={dayScrollRef} className="flex items-center gap-2 overflow-x-auto flex-1 no-scrollbar">
               {days.map((d, i) => (
-                <button key={d.id} onClick={() => setSel(i)}
+                <button key={d.id} ref={(el) => (dayBtnRefs.current[i] = el)} onClick={() => setSel(i)}
                   className={`${B} tracking-[0.06em] uppercase px-4 py-2.5 rounded-full flex-shrink-0 transition-all whitespace-nowrap ${
                     i === safeIdx
                       ? 'bg-[#222] text-[#f5f5ee] font-bold'
