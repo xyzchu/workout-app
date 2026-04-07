@@ -121,9 +121,10 @@ export default function WorkoutApp({ session }) {
   // Scroll selected day tab into view
   useEffect(() => {
     if (isLoading) return
+    const container = dayScrollRef.current
     const btn = dayBtnRefs.current[safeIdx]
-    if (!btn) return
-    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    if (!container || !btn) return
+    container.scrollTo({ left: btn.offsetLeft - container.offsetWidth / 2 + btn.offsetWidth / 2, behavior: 'smooth' })
   }, [safeIdx, isLoading])
 
   // Persist timer state across reloads
