@@ -124,7 +124,9 @@ export default function WorkoutApp({ session }) {
     const container = dayScrollRef.current
     const btn = dayBtnRefs.current[safeIdx]
     if (!container || !btn) return
-    container.scrollTo({ left: btn.offsetLeft - container.offsetWidth / 2 + btn.offsetWidth / 2, behavior: 'smooth' })
+    const cr = container.getBoundingClientRect()
+    const br = btn.getBoundingClientRect()
+    container.scrollTo({ left: container.scrollLeft + br.left - cr.left - cr.width / 2 + br.width / 2, behavior: 'smooth' })
   }, [safeIdx, isLoading])
 
   // Persist timer state across reloads
