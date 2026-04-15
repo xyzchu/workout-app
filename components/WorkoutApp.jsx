@@ -116,6 +116,36 @@ export default function WorkoutApp({ session }) {
   useEffect(() => { tmrDayIdRef.current = tmrDayId }, [tmrDayId])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
 
+  // Register service worker and request notification permission
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    if (Notification.permission === 'default') Notification.requestPermission()
+  }, [])
+
+  const syncNotif = (t) => {
+    if (!('serviceWorker' in navigator) || !('Notification' in window)) return
+    if (Notification.permission !== 'granted') return
+    const cancel = () => navigator.serviceWorker.ready
+      .then((r) => r.active?.postMessage({ type: 'CANCEL' })).catch(() => {})
+    if (!t.on) { cancel(); return }
+    const qItem = t.q[t.qi]
+    const endsAt = t.ps + t.dur * 1000
+    let title, body
+    if (t.phase === 'WORK') {
+      title = 'Rest Time'
+      body = `${qItem.nm} — set ${qItem.sn} of ${qItem.ts} done`
+    } else {
+      const next = t.q[t.qi + 1]
+      if (!next) return // last set, workout ends — no notification needed
+      title = 'Work Time!'
+      body = `${next.nm} — set ${next.sn} of ${next.ts}`
+    }
+    navigator.serviceWorker.ready
+      .then((r) => r.active?.postMessage({ type: 'SCHEDULE', endsAt, title, body }))
+      .catch(() => {})
+  }
+
   // Persist timer state across reloads
   useEffect(() => {
     if (!loadedRef.current) return // don't touch localStorage before data is loaded
@@ -138,6 +168,7 @@ export default function WorkoutApp({ session }) {
       if (restored.on) {
         if (iR.current) clearInterval(iR.current)
         iR.current = setInterval(tick, 100)
+        syncNotif(restored)
       }
     } catch { localStorage.removeItem('workout_timer') }
   }, [isLoading]) // eslint-disable-line
@@ -159,6 +190,7 @@ export default function WorkoutApp({ session }) {
       if (!advanced) { stopTInner(); return }
       setTmr(advanced); tR.current = advanced
       pushHA(advanced.phase, advanced.rem, advanced.q[advanced.qi])
+      syncNotif(advanced)
     }
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
@@ -394,7 +426,7 @@ export default function WorkoutApp({ session }) {
         const rd = getLiveRest(t.q[t.qi])
         const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
         setTmr(n); tR.current = n; ltR.current = -1
-        pushHA('REST', rd, t.q[t.qi])
+        pushHA('REST', rd, t.q[t.qi]); syncNotif(n)
       } else {
         beep(600, 0.5, 'square')
         const ni = t.qi + 1
@@ -403,7 +435,7 @@ export default function WorkoutApp({ session }) {
           const wd = getLiveWork(t.q[ni])
           const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
           setTmr(n); tR.current = n; ltR.current = -1
-          pushHA('WORK', wd, t.q[ni])
+          pushHA('WORK', wd, t.q[ni]); syncNotif(n)
         }
       }
     } else setTmr((p) => ({ ...p, rem: Math.max(0, rem) }))
@@ -416,7 +448,7 @@ export default function WorkoutApp({ session }) {
     setTmr(n); tR.current = n; ltR.current = -1; prevEiRef.current = -1
     iR.current = setInterval(tick, 100)
     setTmrDayId(did)
-    pushHA('WORK', q[0].w, q[0])
+    pushHA('WORK', q[0].w, q[0]); syncNotif(n)
   }
 
   const pauseT = () => {
@@ -432,7 +464,7 @@ export default function WorkoutApp({ session }) {
       pushHA(p.phase, p.rem, p.q[p.qi])
     }
     tR.current = n
-    setTmr(n)
+    setTmr(n); syncNotif(n)
   }
 
   const skipT = () => {
@@ -441,7 +473,7 @@ export default function WorkoutApp({ session }) {
       const rd = getLiveRest(t.q[t.qi])
       const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
       setTmr(n); tR.current = n
-      pushHA('REST', rd, t.q[t.qi])
+      pushHA('REST', rd, t.q[t.qi]); syncNotif(n)
     } else {
       const ni = t.qi + 1
       if (ni >= t.q.length) stopTInner()
@@ -449,7 +481,7 @@ export default function WorkoutApp({ session }) {
         const wd = getLiveWork(t.q[ni])
         const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
         setTmr(n); tR.current = n
-        pushHA('WORK', wd, t.q[ni])
+        pushHA('WORK', wd, t.q[ni]); syncNotif(n)
       }
     }
     ltR.current = -1
@@ -461,18 +493,18 @@ export default function WorkoutApp({ session }) {
       const wd = getLiveWork(t.q[t.qi])
       const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
-      pushHA('WORK', wd, t.q[t.qi])
+      pushHA('WORK', wd, t.q[t.qi]); syncNotif(n)
     } else if (t.qi > 0) {
       const pi = t.qi - 1
       const wd = getLiveWork(t.q[pi])
       const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
-      pushHA('WORK', wd, t.q[pi])
+      pushHA('WORK', wd, t.q[pi]); syncNotif(n)
     } else {
       const wd = getLiveWork(t.q[0])
       const n = { ...t, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
-      pushHA('WORK', wd, t.q[0])
+      pushHA('WORK', wd, t.q[0]); syncNotif(n)
     }
     ltR.current = -1
   }
@@ -485,7 +517,7 @@ export default function WorkoutApp({ session }) {
       const wd = getLiveWork(t.q[ni])
       const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n; ltR.current = -1
-      pushHA('WORK', wd, t.q[ni])
+      pushHA('WORK', wd, t.q[ni]); syncNotif(n)
     }
   }
 
@@ -494,7 +526,7 @@ export default function WorkoutApp({ session }) {
     const n = { on: false, vis: false, phase: 'WORK', q: [], qi: 0, ps: 0, dur: 0, rem: 0 }
     setTmr(n); tR.current = n; setTmrDayId(null); prevEiRef.current = -1
     localStorage.removeItem('workout_timer')
-    pushHA('OFF', 0, null)
+    pushHA('OFF', 0, null); syncNotif(n)
   }
 
   const stopTConfirm = () => ask('Stop the timer?', stopTInner)
