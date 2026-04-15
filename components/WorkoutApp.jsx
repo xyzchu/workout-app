@@ -107,9 +107,13 @@ export default function WorkoutApp({ session }) {
   const prevEiRef = useRef(-1)
   const settingsRef = useRef(settings)
   const dayNameRef = useRef('')
+  const exMapRef = useRef(exMap)
+  const tmrDayIdRef = useRef(tmrDayId)
 
   useEffect(() => { tR.current = tmr }, [tmr])
   useEffect(() => { settingsRef.current = settings }, [settings])
+  useEffect(() => { exMapRef.current = exMap }, [exMap])
+  useEffect(() => { tmrDayIdRef.current = tmrDayId }, [tmrDayId])
   useEffect(() => () => { if (iR.current) clearInterval(iR.current) }, [])
 
   // Persist timer state across reloads
@@ -358,6 +362,12 @@ export default function WorkoutApp({ session }) {
     : []
 
   /* ── Timer ── */
+  const getLiveRest = (qItem) => {
+    const dayEx = exMapRef.current[tmrDayIdRef.current] || []
+    const s = dayEx[qItem.ei]?.sets[qItem.sn - 1]
+    return (s ? Number(s.rest) : 0) || qItem.r
+  }
+
   const buildQ = () => {
     const ex = exMap[did] || []; const q = []
     for (let i = 0; i < ex.length; i++) {
@@ -375,7 +385,7 @@ export default function WorkoutApp({ session }) {
     if (rem <= 0) {
       if (t.phase === 'WORK') {
         beep(1200, 0.3)
-        const rd = t.q[t.qi].r
+        const rd = getLiveRest(t.q[t.qi])
         const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
         setTmr(n); tR.current = n; ltR.current = -1
         pushHA('REST', rd, t.q[t.qi])
@@ -422,7 +432,7 @@ export default function WorkoutApp({ session }) {
   const skipT = () => {
     const t = tR.current
     if (t.phase === 'WORK') {
-      const rd = t.q[t.qi].r
+      const rd = getLiveRest(t.q[t.qi])
       const n = { ...t, phase: 'REST', ps: Date.now(), dur: rd, rem: rd }
       setTmr(n); tR.current = n
       pushHA('REST', rd, t.q[t.qi])
