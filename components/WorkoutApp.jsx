@@ -123,12 +123,19 @@ export default function WorkoutApp({ session }) {
     if (Notification.permission === 'default') Notification.requestPermission()
   }, [])
 
+  const postSW = (msg) => {
+    // controller is the synchronous handle to the active SW — prefer it over
+    // the ready promise to avoid message loss during SW restarts
+    const sw = navigator.serviceWorker.controller
+    if (sw) { sw.postMessage(msg); return }
+    navigator.serviceWorker.ready
+      .then((r) => r.active?.postMessage(msg)).catch(() => {})
+  }
+
   const syncNotif = (t) => {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return
     if (Notification.permission !== 'granted') return
-    const cancel = () => navigator.serviceWorker.ready
-      .then((r) => r.active?.postMessage({ type: 'CANCEL' })).catch(() => {})
-    if (!t.on) { cancel(); return }
+    if (!t.on) { postSW({ type: 'CANCEL' }); return }
     const qItem = t.q[t.qi]
     const endsAt = t.ps + t.dur * 1000
     let title, body
@@ -141,9 +148,7 @@ export default function WorkoutApp({ session }) {
       title = 'Work Time!'
       body = `${next.nm} — set ${next.sn} of ${next.ts}`
     }
-    navigator.serviceWorker.ready
-      .then((r) => r.active?.postMessage({ type: 'SCHEDULE', endsAt, title, body }))
-      .catch(() => {})
+    postSW({ type: 'SCHEDULE', endsAt, title, body })
   }
 
   // Persist timer state across reloads
