@@ -368,6 +368,12 @@ export default function WorkoutApp({ session }) {
     return (s ? Number(s.rest) : 0) || qItem.r
   }
 
+  const getLiveWork = (qItem) => {
+    const dayEx = exMapRef.current[tmrDayIdRef.current] || []
+    const s = dayEx[qItem.ei]?.sets[qItem.sn - 1]
+    return (s ? Number(s.work) : 0) || qItem.w
+  }
+
   const buildQ = () => {
     const ex = exMap[did] || []; const q = []
     for (let i = 0; i < ex.length; i++) {
@@ -394,7 +400,7 @@ export default function WorkoutApp({ session }) {
         const ni = t.qi + 1
         if (ni >= t.q.length) stopTInner()
         else {
-          const wd = t.q[ni].w
+          const wd = getLiveWork(t.q[ni])
           const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
           setTmr(n); tR.current = n; ltR.current = -1
           pushHA('WORK', wd, t.q[ni])
@@ -440,7 +446,7 @@ export default function WorkoutApp({ session }) {
       const ni = t.qi + 1
       if (ni >= t.q.length) stopTInner()
       else {
-        const wd = t.q[ni].w
+        const wd = getLiveWork(t.q[ni])
         const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
         setTmr(n); tR.current = n
         pushHA('WORK', wd, t.q[ni])
@@ -452,18 +458,18 @@ export default function WorkoutApp({ session }) {
   const prevT = () => {
     const t = tR.current
     if (t.phase === 'REST') {
-      const wd = t.q[t.qi].w
+      const wd = getLiveWork(t.q[t.qi])
       const n = { ...t, phase: 'WORK', ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
       pushHA('WORK', wd, t.q[t.qi])
     } else if (t.qi > 0) {
       const pi = t.qi - 1
-      const wd = t.q[pi].w
+      const wd = getLiveWork(t.q[pi])
       const n = { ...t, phase: 'WORK', qi: pi, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
       pushHA('WORK', wd, t.q[pi])
     } else {
-      const wd = t.q[0].w
+      const wd = getLiveWork(t.q[0])
       const n = { ...t, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n
       pushHA('WORK', wd, t.q[0])
@@ -476,7 +482,7 @@ export default function WorkoutApp({ session }) {
     const ni = t.qi + 1
     if (ni >= t.q.length) stopTInner()
     else {
-      const wd = t.q[ni].w
+      const wd = getLiveWork(t.q[ni])
       const n = { ...t, phase: 'WORK', qi: ni, ps: Date.now(), dur: wd, rem: wd }
       setTmr(n); tR.current = n; ltR.current = -1
       pushHA('WORK', wd, t.q[ni])
