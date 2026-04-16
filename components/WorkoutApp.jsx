@@ -136,18 +136,12 @@ export default function WorkoutApp({ session }) {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return
     if (Notification.permission !== 'granted') return
     if (!t.on) { postSW({ type: 'CANCEL' }); return }
-    const qItem = t.q[t.qi]
-    const endsAt = t.ps + t.dur * 1000
-    let title, body
-    if (t.phase === 'WORK') {
-      title = 'Rest Time'
-      body = `${qItem.nm} — set ${qItem.sn} of ${qItem.ts} done`
-    } else {
-      const next = t.q[t.qi + 1]
-      if (!next) return // last set, workout ends — no notification needed
-      title = 'Work Time!'
-      body = `${next.nm} — set ${next.sn} of ${next.ts}`
-    }
+    if (t.phase === 'WORK') { postSW({ type: 'CANCEL' }); return }
+    const next = t.q[t.qi + 1]
+    if (!next) return // last set, workout ends — no notification needed
+    const endsAt = t.ps + t.dur * 1000 - 5000
+    const title = 'Work Time!'
+    const body = `${next.nm} — set ${next.sn} of ${next.ts}`
     postSW({ type: 'SCHEDULE', endsAt, title, body })
   }
 
